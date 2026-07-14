@@ -120,13 +120,27 @@ defmodule StreamdiffusionMac.ModelConverter do
   # Private helpers
   # ---------------------------------------------------------------------------
 
+  @uv_candidate_paths [
+    "/Applications/Kimi.app/Contents/Resources/resources/daimon-bundle/runtime/uv/uv",
+    "/opt/homebrew/bin/uv",
+    "/usr/local/bin/uv",
+    "/usr/bin/uv"
+  ]
+
+  defp find_uv do
+    case System.find_executable("uv") do
+      nil -> Enum.find(@uv_candidate_paths, &File.exists?/1)
+      path -> path
+    end
+  end
+
   defp build_cmd(:setup) do
-    uv_path = System.find_executable("uv")
+    uv_path = find_uv()
 
     if uv_path do
-      # uv-based setup: sync deps from pyproject.toml or requirements.txt
       cmd =
-        "cd '#{@project_root}' && " <>
+        "export PATH=\"/usr/bin:/bin:/usr/sbin:/sbin:#{Path.dirname(uv_path)}:$PATH\" && " <>
+          "cd '#{@project_root}' && " <>
           "#{uv_path} pip install -r python/requirements.txt"
 
       {:ok, cmd}
@@ -143,7 +157,7 @@ defmodule StreamdiffusionMac.ModelConverter do
   end
 
   defp build_cmd(:convert) do
-    uv_path = System.find_executable("uv")
+    uv_path = find_uv()
 
     python_cmd =
       if uv_path do
@@ -159,7 +173,8 @@ defmodule StreamdiffusionMac.ModelConverter do
       end
 
     cmd =
-      "cd '#{@project_root}' && " <>
+      "export PATH=\"/usr/bin:/bin:/usr/sbin:/sbin:#{if uv_path, do: Path.dirname(uv_path), else: "/usr/local/bin"}:$PATH\" && " <>
+        "cd '#{@project_root}' && " <>
         "#{python_cmd} python/scripts/convert_models.py"
 
     {:ok, cmd}
