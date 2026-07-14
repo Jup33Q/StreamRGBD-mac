@@ -134,7 +134,11 @@ defmodule StreamdiffusionMac.StreamRGBD do
         Logger.info("[StreamRGBD] Python API ready at #{state.base_url}")
 
         # Loading CoreML models can take a while on first start.
-        case api_post(state, "/start", start_opts, receive_timeout: 120_000) do
+        # skip_ready_check: the API server is up, even though the engine is not.
+        case api_post(state, "/start", start_opts,
+               receive_timeout: 120_000,
+               skip_ready_check: true
+             ) do
           {:ok, _body} ->
             {:reply, :ok, %{state | ready: true}}
 
@@ -263,25 +267,23 @@ defmodule StreamdiffusionMac.StreamRGBD do
     end
   end
 
-  defp api_post(state, path, payload, opts \\ [])
+  defp api_post(state, path, payload, opts \\ []) do
+    if state.ready == false and not Keyword.get(opts, :skip_ready_check, false) do
+      {:error, :api_not_ready}
+    else
+      url = state.base_url <> path
+      receive_timeout = Keyword.get(opts, :receive_timeout, 10_000)
 
-  defp api_post(%{ready: false}, _path, _payload, _opts) do
-    {:error, :api_not_ready}
-  end
+      case Req.post(url, json: payload, receive_timeout: receive_timeout) do
+        {:ok, %{status: status, body: body}} when status in 200..299 ->
+          {:ok, decode_body(body)}
 
-  defp api_post(state, path, payload, opts) do
-    url = state.base_url <> path
-    receive_timeout = Keyword.get(opts, :receive_timeout, 10_000)
+        {:ok, %{status: status, body: body}} ->
+          {:error, %{status: status, body: decode_body(body)}}
 
-    case Req.post(url, json: payload, receive_timeout: receive_timeout) do
-      {:ok, %{status: status, body: body}} when status in 200..299 ->
-        {:ok, decode_body(body)}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, %{status: status, body: decode_body(body)}}
-
-      {:error, exception} ->
-        {:error, Exception.message(exception)}
+        {:error, exception} ->
+          {:error, Exception.message(exception)}
+      end
     end
   end
 
