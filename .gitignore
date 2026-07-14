@@ -10,6 +10,9 @@ build/
 # CoreML models (large files, not committed)
 coreml_models/
 
+# Downloaded LoRAs (large files, not committed)
+python/loras/
+
 # Depth Anything 3 conversion workspace (downloaded during conversion)
 Depth-Anything-3-for-CoreML/
 DA3-SMALL/

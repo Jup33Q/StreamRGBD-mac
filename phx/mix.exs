@@ -60,8 +60,15 @@ defmodule StreamdiffusionMac.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:ecto_sql, "~> 3.10"},
-      {:ecto_sqlite3, "~> 0.17"},
-      {:req, "~> 0.5"}
+      # Pinned to 0.22.x because 0.23+ requires decimal ~> 3.0 which conflicts
+      # with Membrane's ratio dependency.
+      {:ecto_sqlite3, "~> 0.22.0"},
+      {:req, "~> 0.5"},
+
+      # Membrane multimedia pipeline for camera capture and streaming.
+      {:membrane_core, "~> 1.3"},
+      {:membrane_camera_capture_plugin, "~> 0.7.6"},
+      {:membrane_ffmpeg_swscale_plugin, "~> 0.16.3"}
     ]
   end
 

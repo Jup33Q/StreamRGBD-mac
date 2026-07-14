@@ -215,17 +215,24 @@ cp da3.mlpackage /path/to/StreamRGBD-mac/coreml_models/da3_small.mlpackage
 
 Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
 
-## Phoenix Web UI & Remote Control
+## Phoenix Web UI & Video Stream
 
-A Phoenix project lives in `phx/`. It now includes:
+A Phoenix project lives in `phx/`. The dashboard now uses Membrane to capture
+the local camera, spawns a Python inference worker as a CLI command, and serves
+the processed video stream to the browser via MJPEG over HTTP.
 
-- `StreamdiffusionMac.StreamRGBD` — a GenServer that starts, owns, and stops the
-  Python API process via an Erlang port.
-- `StreamdiffusionMac.PipelineAgent` — an Elixir Agent that keeps lightweight
-  runtime settings in memory.
-- A web dashboard at `/` to start/stop the engine, change the prompt, switch
-  camera/NDI mode, and configure NDI input/output names.
-- JSON endpoints under `/api/stream/*` that delegate to the GenServer.
+### Components
+
+- `StreamdiffusionMac.CameraPipeline` — Membrane pipeline that captures camera
+  frames and converts them to RGB.
+- `StreamdiffusionMac.InferenceWorker` — GenServer that owns the Python
+  `inference_worker.py` Port and forwards frames back and forth.
+- `StreamdiffusionMac.VideoStreamer` — GenServer that holds the latest
+  processed JPEG frame.
+- `StreamdiffusionMac.StreamRGBD` — orchestrator that starts/stops the pipeline
+  and worker.
+- Web dashboard at `/` with a live video preview.
+- JSON endpoints under `/api/stream/*` and MJPEG stream at `/api/stream/video`.
 
 ### Setup
 
@@ -235,6 +242,12 @@ mix deps.get
 mix ecto.setup
 ```
 
+Requires FFmpeg for Membrane camera capture:
+
+```bash
+brew install ffmpeg
+```
+
 ### Run
 
 ```bash
@@ -242,56 +255,45 @@ cd phx
 mix phx.server
 ```
 
-Then open <http://localhost:4000> for the dashboard, or use the JSON API below.
+Then open <http://localhost:4000> and click **Start Engine**.
 
 ### Programmatic control (IEx)
 
 ```elixir
-StreamdiffusionMac.StreamRGBD.start_engine()
+StreamdiffusionMac.StreamRGBD.start_engine(prompt: "oil painting style, masterpiece")
 StreamdiffusionMac.StreamRGBD.set_prompt("cyberpunk city, neon lights")
-StreamdiffusionMac.StreamRGBD.set_input_mode("ndi")
-StreamdiffusionMac.StreamRGBD.set_ndi_input("OBS")
-StreamdiffusionMac.StreamRGBD.set_ndi_output("SD-Render")
 StreamdiffusionMac.StreamRGBD.status()
 StreamdiffusionMac.StreamRGBD.stop_engine()
 ```
 
-## HTTP API
+### JSON API
 
-`python/streamdiffusion_api.py` exposes a local Flask HTTP API. The GenServer
-starts it automatically, but you can also run it standalone:
-
-```bash
-.venv/bin/python python/streamdiffusion_api.py --port 8787
-```
-
-### Endpoints
-
-| Method | Path | Body | Description |
-|--------|------|------|-------------|
-| `POST` | `/start` | `{mode, prompt, ndi_source, ndi_output, depth, ...}` | Start the engine |
-| `POST` | `/stop` | — | Stop the engine |
-| `POST` | `/prompt` | `{"prompt": "..."}` | Change the prompt |
-| `POST` | `/input_mode` | `{"mode": "camera|ndi"}` | Switch input source |
-| `POST` | `/ndi_input` | `{"source": "..."}` | Set NDI input source name |
-| `POST` | `/ndi_output` | `{"name": "..."}` | Set NDI output source name |
-| `GET`  | `/status` | — | Read runtime status |
+| Method | Path | Body |
+|--------|------|------|
+| `POST` | `/api/stream/start` | `{"prompt":"...", "model":"sdxs", "render-size":512, "output-size":512, "width":640, "height":480}` |
+| `POST` | `/api/stream/stop` | — |
+| `POST` | `/api/stream/prompt` | `{"prompt":"..."}` |
+| `GET`  | `/api/stream/status` | — |
+| `GET`  | `/api/stream/video` | — |
 
 ### Examples
 
 ```bash
-# Start with NDI input/output
-curl -X POST http://127.0.0.1:8787/start \
+# Start the engine
+curl -X POST http://127.0.0.1:4000/api/stream/start \
   -H "Content-Type: application/json" \
-  -d '{"mode":"ndi","prompt":"oil painting","ndi_source":"OBS","ndi_output":"SD-Render"}'
+  -d '{"prompt":"oil painting style, masterpiece"}'
 
 # Change prompt
-curl -X POST http://127.0.0.1:8787/prompt \
+curl -X POST http://127.0.0.1:4000/api/stream/prompt \
   -H "Content-Type: application/json" \
   -d '{"prompt":"watercolor painting"}'
 
 # Read status
-curl http://127.0.0.1:8787/status
+curl http://127.0.0.1:4000/api/stream/status
+
+# MJPEG stream (open in browser or save)
+curl http://127.0.0.1:4000/api/stream/video
 ```
 
 ### Useful tasks

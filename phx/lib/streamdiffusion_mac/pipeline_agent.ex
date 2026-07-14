@@ -21,6 +21,7 @@ defmodule StreamdiffusionMac.PipelineAgent do
     feedback: 0.1,
     depth_backend: "auto",
     depth_preview_mode: "mono",
+    depth_enabled: false,
     running: false,
     last_frame: nil
   }

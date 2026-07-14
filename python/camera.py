@@ -268,17 +268,21 @@ class Pipeline:
 
     def process_frame(self, frame_bgr):
         """Full pipeline: preprocess → VAE enc → UNet → VAE dec → postprocess."""
-        h, w = frame_bgr.shape[:2]
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        return self.process_frame_rgb(rgb)
+
+    def process_frame_rgb(self, frame_rgb):
+        """Same pipeline but accepts and returns RGB frames."""
+        h, w = frame_rgb.shape[:2]
         if w > h:
             off = (w - h) // 2
-            frame_bgr = frame_bgr[:, off:off + h]
+            frame_rgb = frame_rgb[:, off:off + h]
         elif h > w:
             off = (h - w) // 2
-            frame_bgr = frame_bgr[off:off + w, :]
+            frame_rgb = frame_rgb[off:off + w, :]
 
-        resized = cv2.resize(frame_bgr, (self.render_size, self.render_size))
-        rgb = resized[:, :, ::-1]
-        np.copyto(self._img_buf, self._norm_lut[rgb].transpose(2, 0, 1)[np.newaxis])
+        resized = cv2.resize(frame_rgb, (self.render_size, self.render_size))
+        np.copyto(self._img_buf, self._norm_lut[resized].transpose(2, 0, 1)[np.newaxis])
 
         # Smooth prompt transition
         diff = self._target_embeds - self._prompt_embeds
@@ -315,7 +319,7 @@ class Pipeline:
         r = ((r + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
         if r.shape[0] != self.output_size:
             r = cv2.resize(r, (self.output_size, self.output_size))
-        return cv2.cvtColor(r, cv2.COLOR_RGB2BGR)
+        return r
 
 
 class CameraApp:

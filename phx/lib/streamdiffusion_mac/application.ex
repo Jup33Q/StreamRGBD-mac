@@ -10,11 +10,13 @@ defmodule StreamdiffusionMac.Application do
     children = [
       StreamdiffusionMacWeb.Telemetry,
       StreamdiffusionMac.Repo,
+      {Phoenix.PubSub, name: StreamdiffusionMac.PubSub},
       StreamdiffusionMac.PipelineAgent,
+      StreamdiffusionMac.VideoStreamer,
+      StreamdiffusionMac.InferenceWorker,
       StreamdiffusionMac.StreamRGBD,
       {DNSCluster,
        query: Application.get_env(:streamdiffusion_mac, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: StreamdiffusionMac.PubSub},
       # Start a worker by calling: StreamdiffusionMac.Worker.start_link(arg)
       # {StreamdiffusionMac.Worker, arg},
       # Start to serve requests, typically the last entry

@@ -745,8 +745,17 @@ class APIServer:
 
     def run(self):
         # Print a ready marker so the parent process knows the HTTP server is up.
+        # Also emit the OS PID and main thread ID so the parent can identify this
+        # StreamDiffusion instance.
         def _ready():
             time.sleep(0.5)
+            print(
+                f"STREAMDIFFUSION_INSTANCE_PID {os.getpid()}", flush=True
+            )
+            print(
+                f"STREAMDIFFUSION_INSTANCE_TID {threading.current_thread().ident}",
+                flush=True,
+            )
             print(f"STREAMDIFFUSION_API_READY http://{self.host}:{self.port}", flush=True)
 
         threading.Thread(target=_ready, daemon=True).start()

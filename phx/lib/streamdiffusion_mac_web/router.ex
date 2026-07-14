@@ -17,7 +17,7 @@ defmodule StreamdiffusionMacWeb.Router do
   scope "/", StreamdiffusionMacWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", StreamRGBDLive
   end
 
   scope "/api/stream", StreamdiffusionMacWeb do
@@ -26,9 +26,7 @@ defmodule StreamdiffusionMacWeb.Router do
     post "/start", StreamRGBDController, :start
     post "/stop", StreamRGBDController, :stop
     post "/prompt", StreamRGBDController, :prompt
-    post "/input_mode", StreamRGBDController, :input_mode
-    post "/ndi_input", StreamRGBDController, :ndi_input
-    post "/ndi_output", StreamRGBDController, :ndi_output
     get "/status", StreamRGBDController, :status
+    get "/video", StreamRGBDController, :video
   end
 end

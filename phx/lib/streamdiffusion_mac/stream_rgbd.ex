@@ -1,23 +1,20 @@
 defmodule StreamdiffusionMac.StreamRGBD do
   @moduledoc """
-  GenServer that owns the external Python StreamDiffusion API process.
+  Orchestrator that wires together the Membrane camera pipeline, the Python
+  inference worker, and the video streamer.
 
-  Provides functions to start/stop the Python runtime and to control the
-  pipeline (prompt, input mode, NDI input/output names) via HTTP calls to
-  the local API server.
-
-  The Python process is spawned with an Erlang port. Stdout from the process
-  is captured and logged; when the port closes, the GenServer marks the
-  engine as stopped.
+  It no longer talks to a Python HTTP API. Instead it:
+    1. Starts `StreamdiffusionMac.InferenceWorker` (spawns `python/inference_worker.py`).
+    2. Starts `StreamdiffusionMac.CameraPipeline` (Membrane camera capture).
+    3. Camera frames flow into the inference worker and processed JPEG frames
+       land in `StreamdiffusionMac.VideoStreamer`.
+    4. The Phoenix controller serves an MJPEG stream from `VideoStreamer`.
 
   ## Public API
 
-      StreamdiffusionMac.StreamRGBD.start_engine()
+      StreamdiffusionMac.StreamRGBD.start_engine(prompt: "oil painting style")
       StreamdiffusionMac.StreamRGBD.stop_engine()
-      StreamdiffusionMac.StreamRGBD.set_prompt("cyberpunk city, neon lights")
-      StreamdiffusionMac.StreamRGBD.set_input_mode("ndi")
-      StreamdiffusionMac.StreamRGBD.set_ndi_input("OBS")
-      StreamdiffusionMac.StreamRGBD.set_ndi_output("SD-Render")
+      StreamdiffusionMac.StreamRGBD.set_prompt("cyberpunk city")
       StreamdiffusionMac.StreamRGBD.status()
   """
 
@@ -25,13 +22,13 @@ defmodule StreamdiffusionMac.StreamRGBD do
 
   require Logger
 
-  @default_api_port 8787
-  @default_api_host "127.0.0.1"
-  @api_ready_marker "STREAMDIFFUSION_API_READY"
+  alias Phoenix.PubSub
 
-  # -----------------------------------------------------------------------------
+  @pubsub_topic "stream_rgbd:status"
+
+  # ---------------------------------------------------------------------------
   # Client API
-  # -----------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -39,67 +36,61 @@ defmodule StreamdiffusionMac.StreamRGBD do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc "Start the Python StreamDiffusion API process."
-  @spec start_engine(keyword()) :: :ok | {:error, atom() | String.t()}
+  @doc """
+  Start the engine: spawn the Python inference worker and the Membrane camera
+  pipeline. Returns `{:ok, info}` with `instance_pid` and `instance_tid`.
+  """
+  @spec start_engine(keyword()) ::
+          {:ok, %{instance_pid: integer() | nil, instance_tid: integer() | nil}}
+          | {:error, atom() | String.t()}
   def start_engine(opts \\ []) do
-    GenServer.call(__MODULE__, {:start_engine, opts}, 60_000)
+    GenServer.call(__MODULE__, {:start_engine, opts}, 300_000)
   end
 
-  @doc "Stop the Python StreamDiffusion API process."
+  @doc "Stop the engine and release all resources."
   @spec stop_engine() :: :ok | {:error, atom() | String.t()}
   def stop_engine() do
-    GenServer.call(__MODULE__, :stop_engine, 10_000)
+    GenServer.call(__MODULE__, :stop_engine, 15_000)
   end
 
-  @doc "Change the active prompt."
-  @spec set_prompt(String.t()) :: {:ok, map()} | {:error, any()}
+  @doc "Change the active prompt (takes effect on next start)."
+  @spec set_prompt(String.t()) :: :ok | {:error, any()}
   def set_prompt(prompt) when is_binary(prompt) do
-    GenServer.call(__MODULE__, {:api_post, "/prompt", %{prompt: prompt}})
+    GenServer.call(__MODULE__, {:set_prompt, prompt})
   end
 
-  @doc "Switch input mode: 'camera' or 'ndi'."
-  @spec set_input_mode(String.t()) :: {:ok, map()} | {:error, any()}
-  def set_input_mode(mode) when mode in ["camera", "ndi"] do
-    GenServer.call(__MODULE__, {:api_post, "/input_mode", %{mode: mode}})
-  end
-
-  @doc "Set the NDI input source name (partial match)."
-  @spec set_ndi_input(String.t()) :: {:ok, map()} | {:error, any()}
-  def set_ndi_input(source) when is_binary(source) do
-    GenServer.call(__MODULE__, {:api_post, "/ndi_input", %{source: source}})
-  end
-
-  @doc "Set the NDI output source name."
-  @spec set_ndi_output(String.t()) :: {:ok, map()} | {:error, any()}
-  def set_ndi_output(name) when is_binary(name) do
-    GenServer.call(__MODULE__, {:api_post, "/ndi_output", %{name: name}})
-  end
-
-  @doc "Fetch the current engine status from the Python API."
+  @doc "Fetch the current engine status."
   @spec status() :: {:ok, map()} | {:error, any()}
   def status() do
-    GenServer.call(__MODULE__, {:api_get, "/status"})
+    GenServer.call(__MODULE__, :status)
   end
 
-  # -----------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
   # Server callbacks
-  # -----------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
 
   @impl true
   def init(opts) do
-    state = %{
-      port: nil,
-      ready: false,
-      host: Keyword.get(opts, :api_host, @default_api_host),
-      port_no: Keyword.get(opts, :api_port, @default_api_port),
-      python_path: Keyword.get(opts, :python_path, default_python_path()),
-      script_path: Keyword.get(opts, :script_path, default_script_path()),
-      start_opts: Keyword.get(opts, :start_opts, %{}),
-      base_url: nil,
-      stdout_buffer: ""
-    }
+    inference_worker =
+      Keyword.get(opts, :inference_worker, StreamdiffusionMac.InferenceWorker)
 
-    state = %{state | base_url: "http://#{state.host}:#{state.port_no}"}
+    camera_pipeline =
+      Keyword.get(opts, :camera_pipeline, StreamdiffusionMac.CameraPipeline)
+
+    video_streamer =
+      Keyword.get(opts, :video_streamer, StreamdiffusionMac.VideoStreamer)
+
+    state = %{
+      inference_worker: inference_worker,
+      camera_pipeline: camera_pipeline,
+      video_streamer: video_streamer,
+      pipeline_pid: nil,
+      running: false,
+      start_opts: %{},
+      instance_pid: nil,
+      instance_tid: nil,
+      prompt: "oil painting style, masterpiece, highly detailed"
+    }
 
     if Keyword.get(opts, :auto_start, false) do
       send(self(), :auto_start)
@@ -109,211 +100,169 @@ defmodule StreamdiffusionMac.StreamRGBD do
   end
 
   @impl true
-  def handle_call({:start_engine, overrides}, _from, %{port: nil} = state) do
-    start_opts = Map.merge(state.start_opts, Map.new(overrides))
-
-    cmd =
-      "#{state.python_path} #{state.script_path} " <>
-        "--host #{state.host} --port #{state.port_no}"
-
-    Logger.info("[StreamRGBD] Starting Python API: #{cmd}")
-
-    port =
-      Port.open({:spawn, String.to_charlist(cmd)}, [
-        :binary,
-        :stderr_to_stdout,
-        :exit_status,
-        line: 1024
-      ])
-
-    state = %{state | port: port, ready: false}
-
-    # Wait for the ready marker before returning.
-    case wait_for_ready(state, 30_000) do
-      :ok ->
-        Logger.info("[StreamRGBD] Python API ready at #{state.base_url}")
-
-        # Loading CoreML models can take a while on first start.
-        # skip_ready_check: the API server is up, even though the engine is not.
-        case api_post(state, "/start", start_opts,
-               receive_timeout: 120_000,
-               skip_ready_check: true
-             ) do
-          {:ok, _body} ->
-            {:reply, :ok, %{state | ready: true}}
-
-          {:error, reason} ->
-            Logger.error("[StreamRGBD] /start failed: #{inspect(reason)}")
-            {:reply, {:error, reason}, state}
-        end
-
-      {:error, reason} ->
-        Port.close(port)
-        {:reply, {:error, reason}, %{state | port: nil, ready: false}}
-    end
-  end
-
-  def handle_call({:start_engine, _opts}, _from, state) do
+  def handle_call({:start_engine, _opts}, _from, %{running: true} = state) do
     {:reply, {:error, :already_running}, state}
   end
 
-  def handle_call(:stop_engine, _from, %{port: nil} = state) do
+  def handle_call({:start_engine, opts}, _from, state) do
+    case do_start_engine(opts, state) do
+      {:ok, instance, new_state} ->
+        broadcast_status(new_state)
+        {:reply, {:ok, instance}, new_state}
+
+      {:error, reason, new_state} ->
+        broadcast_status(new_state)
+        {:reply, {:error, reason}, new_state}
+    end
+  end
+
+  def handle_call(:stop_engine, _from, %{running: false} = state) do
     {:reply, {:error, :not_running}, state}
   end
 
   def handle_call(:stop_engine, _from, state) do
-    # Ask the API to stop gracefully, then close the port.
-    _ = api_post(state, "/stop", %{})
-    Process.sleep(200)
+    Logger.info("[StreamRGBD] Stopping engine...")
 
-    if state.port do
-      Port.close(state.port)
+    if state.pipeline_pid do
+      Membrane.Pipeline.terminate(state.pipeline_pid)
     end
 
-    {:reply, :ok, %{state | port: nil, ready: false}}
+    state.inference_worker.stop_worker()
+    new_state = reset_state(state)
+    broadcast_status(new_state)
+    {:reply, :ok, new_state}
   end
 
-  def handle_call({:api_post, path, payload}, _from, state) do
-    {:reply, api_post(state, path, payload), state}
+  def handle_call({:set_prompt, prompt}, _from, state) do
+    state.inference_worker.set_prompt(prompt)
+    new_state = %{state | prompt: prompt}
+    broadcast_status(new_state)
+    {:reply, :ok, new_state}
   end
 
-  def handle_call({:api_get, path}, _from, state) do
-    {:reply, api_get(state, path), state}
+  def handle_call(:status, _from, state) do
+    body = build_status(state)
+    {:reply, {:ok, body}, state}
   end
 
   @impl true
-  def handle_info({port, {:data, {:eol, line}}}, %{port: port} = state) do
-    line = String.trim(line)
-    Logger.info("[StreamRGBD] #{line}")
-
-    ready? = state.ready or String.contains?(line, @api_ready_marker)
-    {:noreply, %{state | ready: ready?}}
-  end
-
-  def handle_info({port, {:data, data}}, %{port: port} = state) when is_binary(data) do
-    buffer = state.stdout_buffer <> data
-
-    {lines, rest} =
-      case String.split(buffer, "\n") do
-        [single] ->
-          {[], single}
-
-        parts ->
-          {last, rest} = List.pop_at(parts, -1)
-          {rest, last}
-      end
-
-    Enum.each(lines, fn line ->
-      Logger.info("[StreamRGBD] #{String.trim(line)}")
-    end)
-
-    {:noreply, %{state | stdout_buffer: rest}}
-  end
-
-  def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.warning("[StreamRGBD] Python process exited with status #{status}")
-    {:noreply, %{state | port: nil, ready: false}}
-  end
-
   def handle_info(:auto_start, state) do
-    case handle_call({:start_engine, []}, :auto_start, state) do
-      {:reply, _, new_state} -> {:noreply, new_state}
-      other -> other
+    case do_start_engine([], state) do
+      {:ok, _instance, new_state} ->
+        broadcast_status(new_state)
+        {:noreply, new_state}
+
+      {:error, _reason, new_state} ->
+        broadcast_status(new_state)
+        {:noreply, new_state}
     end
   end
 
-  def handle_info(msg, state) do
-    Logger.debug("[StreamRGBD] unexpected message: #{inspect(msg)}")
+  def handle_info({:EXIT, pid, _reason}, %{pipeline_pid: pid} = state) do
+    new_state = %{state | pipeline_pid: nil, running: false}
+    broadcast_status(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  # -----------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
   # Private helpers
-  # -----------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
 
-  defp default_python_path do
-    # Assumes this file lives in phx/lib/streamdiffusion_mac.
-    Path.join([__DIR__, "..", "..", "..", ".venv", "bin", "python"])
-    |> Path.expand()
-  end
+  defp do_start_engine(opts, state) do
+    opts = Map.merge(state.start_opts, Map.new(opts))
 
-  defp default_script_path do
-    Path.join([__DIR__, "..", "..", "..", "python", "streamdiffusion_api.py"])
-    |> Path.expand()
-  end
+    worker_opts =
+      opts
+      |> Map.put("prompt", state.prompt)
+      |> Map.put_new("model", "sdxs")
+      |> Map.put_new("render-size", 512)
+      |> Map.put_new("output-size", 512)
+      |> Map.put_new("strength", 0.5)
+      |> Map.put_new("feedback", 0.1)
 
-  defp wait_for_ready(_state, timeout) when timeout <= 0 do
-    {:error, :timeout_waiting_for_api}
-  end
+    Logger.info("[StreamRGBD] Starting inference worker...")
 
-  defp wait_for_ready(state, timeout) do
-    receive do
-      {port, {:data, {:eol, line}}} when port == state.port ->
-        line = String.trim(line)
-        Logger.info("[StreamRGBD] #{line}")
+    case state.inference_worker.start_worker(worker_opts) do
+      {:ok, instance} ->
+        Logger.info("[StreamRGBD] Inference worker ready, starting camera pipeline...")
 
-        if String.contains?(line, @api_ready_marker) do
-          :ok
-        else
-          wait_for_ready(state, timeout)
+        pipeline_opts = [
+          inference_worker: state.inference_worker,
+          width: Map.get(opts, "width", 640),
+          height: Map.get(opts, "height", 480)
+        ]
+
+        case state.camera_pipeline.start(pipeline_opts) do
+          {:ok, pipeline_pid} ->
+            new_state = %{
+              state
+              | running: true,
+                pipeline_pid: pipeline_pid,
+                instance_pid: instance.instance_pid,
+                instance_tid: instance.instance_tid
+            }
+
+            {:ok, instance, new_state}
+
+          {:error, reason} ->
+            Logger.error("[StreamRGBD] Camera pipeline failed: #{inspect(reason)}")
+            state.inference_worker.stop_worker()
+            {:error, reason, state}
         end
 
-      {port, {:data, data}} when port == state.port and is_binary(data) ->
-        # Fragmented output before line mode kicks in.
-        wait_for_ready(state, timeout)
-    after
-      100 ->
-        wait_for_ready(state, timeout - 100)
+      {:error, reason} ->
+        Logger.error("[StreamRGBD] Inference worker failed: #{inspect(reason)}")
+        {:error, reason, state}
     end
   end
 
-  defp api_post(state, path, payload, opts \\ []) do
-    if state.ready == false and not Keyword.get(opts, :skip_ready_check, false) do
-      {:error, :api_not_ready}
-    else
-      url = state.base_url <> path
-      receive_timeout = Keyword.get(opts, :receive_timeout, 10_000)
+  defp reset_state(state) do
+    %{
+      state
+      | pipeline_pid: nil,
+        running: false,
+        instance_pid: nil,
+        instance_tid: nil
+    }
+  end
 
-      case Req.post(url, json: payload, receive_timeout: receive_timeout) do
-        {:ok, %{status: status, body: body}} when status in 200..299 ->
-          {:ok, decode_body(body)}
-
-        {:ok, %{status: status, body: body}} ->
-          {:error, %{status: status, body: decode_body(body)}}
-
-        {:error, exception} ->
-          {:error, Exception.message(exception)}
+  @doc false
+  @spec build_status(map()) :: map()
+  defp build_status(state) do
+    worker_status =
+      case state.inference_worker.status() do
+        {:ok, s} -> s
+        {:error, reason} -> %{error: inspect(reason)}
       end
-    end
+
+    streamer_status =
+      case state.video_streamer.status() do
+        {:ok, s} -> s
+        {:error, reason} -> %{error: inspect(reason)}
+      end
+
+    %{
+      running: state.running,
+      ready: worker_status[:ready] || false,
+      busy: worker_status[:busy] || false,
+      mode: "camera",
+      prompt: state.prompt,
+      instance_pid: state.instance_pid,
+      instance_tid: state.instance_tid,
+      frame_count: streamer_status[:frame_count] || 0,
+      has_frame: streamer_status[:has_frame] || false,
+      error: worker_status[:error]
+    }
   end
 
-  defp api_get(%{ready: false}, _path) do
-    {:error, :api_not_ready}
+  @doc false
+  @spec broadcast_status(map()) :: :ok
+  defp broadcast_status(state) do
+    body = build_status(state)
+    PubSub.broadcast(StreamdiffusionMac.PubSub, @pubsub_topic, {:status_update, body})
   end
-
-  defp api_get(state, path) do
-    url = state.base_url <> path
-
-    case Req.get(url, receive_timeout: 10_000) do
-      {:ok, %{status: status, body: body}} when status in 200..299 ->
-        {:ok, decode_body(body)}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, %{status: status, body: decode_body(body)}}
-
-      {:error, exception} ->
-        {:error, Exception.message(exception)}
-    end
-  end
-
-  defp decode_body(body) when is_map(body), do: body
-
-  defp decode_body(body) when is_binary(body) do
-    case Jason.decode(body) do
-      {:ok, decoded} -> decoded
-      {:error, _} -> %{"raw" => body}
-    end
-  end
-
-  defp decode_body(body), do: %{"raw" => inspect(body)}
 end
