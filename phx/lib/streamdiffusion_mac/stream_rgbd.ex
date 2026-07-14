@@ -37,6 +37,15 @@ defmodule StreamdiffusionMac.StreamRGBD do
   end
 
   @doc """
+  Check whether the environment is ready to start the engine.
+  Returns a map with :ok/:error per component.
+  """
+  @spec check_environment() :: map()
+  def check_environment() do
+    GenServer.call(__MODULE__, :check_environment)
+  end
+
+  @doc """
   Start the engine: spawn the Python inference worker and the Membrane camera
   pipeline. Returns `{:ok, info}` with `instance_pid` and `instance_tid`.
   """
@@ -57,6 +66,21 @@ defmodule StreamdiffusionMac.StreamRGBD do
   @spec set_prompt(String.t()) :: :ok | {:error, any()}
   def set_prompt(prompt) when is_binary(prompt) do
     GenServer.call(__MODULE__, {:set_prompt, prompt})
+  end
+
+  @doc """
+  Start the camera preview pipeline (raw camera feed, no AI inference).
+  Useful for testing camera availability before starting the full engine.
+  """
+  @spec start_camera() :: {:ok, map()} | {:error, atom() | String.t()}
+  def start_camera() do
+    GenServer.call(__MODULE__, :start_camera, 120_000)
+  end
+
+  @doc "Stop the camera preview pipeline."
+  @spec stop_camera() :: :ok | {:error, atom() | String.t()}
+  def stop_camera() do
+    GenServer.call(__MODULE__, :stop_camera, 15_000)
   end
 
   @doc "Fetch the current engine status."
@@ -80,11 +104,16 @@ defmodule StreamdiffusionMac.StreamRGBD do
     video_streamer =
       Keyword.get(opts, :video_streamer, StreamdiffusionMac.VideoStreamer)
 
+    camera_preview =
+      Keyword.get(opts, :camera_preview, StreamdiffusionMac.CameraPreview)
+
     state = %{
       inference_worker: inference_worker,
       camera_pipeline: camera_pipeline,
+      camera_preview: camera_preview,
       video_streamer: video_streamer,
       pipeline_pid: nil,
+      camera_running: false,
       running: false,
       start_opts: %{},
       instance_pid: nil,
@@ -100,6 +129,27 @@ defmodule StreamdiffusionMac.StreamRGBD do
   end
 
   @impl true
+  def handle_call(:check_environment, _from, state) do
+    python_ok = File.exists?(state.inference_worker.default_python_path())
+    script_ok = File.exists?(state.inference_worker.default_script_path())
+
+    coreml_dir =
+      Path.expand("../coreml_models", state.inference_worker.default_script_path())
+
+    models = ["unet_sdxs_512.mlpackage", "taesd_decoder.mlpackage", "taesd_encoder.mlpackage"]
+    missing_models = Enum.reject(models, &File.exists?(Path.join(coreml_dir, &1)))
+
+    body = %{
+      python: python_ok,
+      script: script_ok,
+      coreml_dir: coreml_dir,
+      models_ready: Enum.empty?(missing_models),
+      missing_models: missing_models
+    }
+
+    {:reply, body, state}
+  end
+
   def handle_call({:start_engine, _opts}, _from, %{running: true} = state) do
     {:reply, {:error, :already_running}, state}
   end
@@ -129,6 +179,39 @@ defmodule StreamdiffusionMac.StreamRGBD do
 
     state.inference_worker.stop_worker()
     new_state = reset_state(state)
+    broadcast_status(new_state)
+    {:reply, :ok, new_state}
+  end
+
+  def handle_call(:start_camera, _from, %{camera_running: true} = state) do
+    {:reply, {:error, :camera_already_running}, state}
+  end
+
+  def handle_call(:start_camera, _from, state) do
+    case do_start_camera(state) do
+      {:ok, new_state} ->
+        broadcast_status(new_state)
+        {:reply, :ok, new_state}
+
+      {:error, reason, new_state} ->
+        broadcast_status(new_state)
+        {:reply, {:error, reason}, new_state}
+    end
+  end
+
+  def handle_call(:stop_camera, _from, %{camera_running: false} = state) do
+    {:reply, {:error, :camera_not_running}, state}
+  end
+
+  def handle_call(:stop_camera, _from, state) do
+    Logger.info("[StreamRGBD] Stopping camera preview...")
+
+    if state.pipeline_pid do
+      Membrane.Pipeline.terminate(state.pipeline_pid)
+    end
+
+    state.camera_preview.stop_worker()
+    new_state = %{state | pipeline_pid: nil, camera_running: false}
     broadcast_status(new_state)
     {:reply, :ok, new_state}
   end
@@ -225,9 +308,45 @@ defmodule StreamdiffusionMac.StreamRGBD do
       state
       | pipeline_pid: nil,
         running: false,
+        camera_running: false,
         instance_pid: nil,
         instance_tid: nil
     }
+  end
+
+  defp do_start_camera(state) do
+    Logger.info("[StreamRGBD] Starting camera preview...")
+
+    case state.camera_preview.start_worker() do
+      {:ok, _info} ->
+        Logger.info("[StreamRGBD] Camera preview worker ready, starting pipeline...")
+
+        pipeline_opts = [
+          inference_worker: state.camera_preview,
+          width: 640,
+          height: 480
+        ]
+
+        case state.camera_pipeline.start(pipeline_opts) do
+          {:ok, pipeline_pid} ->
+            new_state = %{
+              state
+              | camera_running: true,
+                pipeline_pid: pipeline_pid
+            }
+
+            {:ok, new_state}
+
+          {:error, reason} ->
+            Logger.error("[StreamRGBD] Camera pipeline failed: #{inspect(reason)}")
+            state.camera_preview.stop_worker()
+            {:error, reason, state}
+        end
+
+      {:error, reason} ->
+        Logger.error("[StreamRGBD] Camera preview worker failed: #{inspect(reason)}")
+        {:error, reason, state}
+    end
   end
 
   @doc false
@@ -247,6 +366,7 @@ defmodule StreamdiffusionMac.StreamRGBD do
 
     %{
       running: state.running,
+      camera_running: state.camera_running,
       ready: worker_status[:ready] || false,
       busy: worker_status[:busy] || false,
       mode: "camera",

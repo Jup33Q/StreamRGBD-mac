@@ -251,12 +251,16 @@ defmodule StreamdiffusionMac.InferenceWorker do
   # Private helpers
   # ---------------------------------------------------------------------------
 
-  defp default_python_path do
+  @doc "Return the default Python interpreter path."
+  @spec default_python_path() :: String.t()
+  def default_python_path do
     Path.join([__DIR__, "..", "..", "..", ".venv", "bin", "python"])
     |> Path.expand()
   end
 
-  defp default_script_path do
+  @doc "Return the default Python worker script path."
+  @spec default_script_path() :: String.t()
+  def default_script_path do
     Path.join([__DIR__, "..", "..", "..", "python", "inference_worker.py"])
     |> Path.expand()
   end

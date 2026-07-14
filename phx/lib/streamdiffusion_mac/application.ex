@@ -13,12 +13,11 @@ defmodule StreamdiffusionMac.Application do
       {Phoenix.PubSub, name: StreamdiffusionMac.PubSub},
       StreamdiffusionMac.PipelineAgent,
       StreamdiffusionMac.VideoStreamer,
+      StreamdiffusionMac.CameraPreview,
       StreamdiffusionMac.InferenceWorker,
       StreamdiffusionMac.StreamRGBD,
       {DNSCluster,
        query: Application.get_env(:streamdiffusion_mac, :dns_cluster_query) || :ignore},
-      # Start a worker by calling: StreamdiffusionMac.Worker.start_link(arg)
-      # {StreamdiffusionMac.Worker, arg},
       # Start to serve requests, typically the last entry
       StreamdiffusionMacWeb.Endpoint
     ]
