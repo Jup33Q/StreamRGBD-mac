@@ -101,8 +101,7 @@ defmodule StreamdiffusionMac.InferenceWorker do
       port =
         Port.open({:spawn, String.to_charlist(cmd)}, [
           :binary,
-          :packet,
-          4,
+          {:packet, 4},
           :exit_status
         ])
 
