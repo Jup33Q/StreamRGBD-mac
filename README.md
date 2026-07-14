@@ -1,6 +1,8 @@
-# StreamDiffusion for Mac
+# StreamRGBD-mac
 
-Real-time camera image-to-image transformation using diffusion models on Apple Silicon, accelerated with CoreML.
+Real-time camera / NDI image-to-image transformation with optional RGBD depth output
+on Apple Silicon, accelerated with CoreML. Controlled via an HTTP API, an Elixir
+GenServer, and a Phoenix web dashboard.
 
 **22.7 FPS** at 512x512 resolution on Apple M3 Ultra with SDXS-512.
 
@@ -15,11 +17,11 @@ Real-time camera image-to-image transformation using diffusion models on Apple S
 
 ```bash
 # 1. Clone
-git clone https://github.com/ochyai/streamdiffusion-mac.git
-cd streamdiffusion-mac
+git clone https://github.com/Jup33Q/StreamRGBD-mac.git
+cd StreamRGBD-mac
 
 # 2. Setup environment
-chmod +x setup.sh
+chmod +x python/setup.sh
 python/setup.sh
 
 # 3. Activate
@@ -36,15 +38,19 @@ python python/camera.py --prompt "oil painting style, masterpiece"
 
 ```
 .
-├── python/          # Python StreamDiffusion + RGBD pipeline
+├── python/                       # Python StreamDiffusion + RGBD pipeline
 │   ├── camera.py
 │   ├── camera_rgbd.py
+│   ├── camera_ndi.py
+│   ├── streamdiffusion_api.py   # Flask HTTP API for remote control
 │   ├── requirements.txt
 │   └── setup.sh
-├── phx/             # Elixir Phoenix web UI (SQLite3)
+├── phx/                          # Elixir Phoenix web UI (SQLite3)
 │   └── lib/streamdiffusion_mac/
-│       └── pipeline_agent.ex
-├── coreml_models/   # Converted CoreML models (generated)
+│       ├── stream_rgbd.ex       # GenServer that owns the Python API process
+│       ├── pipeline_agent.ex
+│       └── ...
+├── coreml_models/               # Converted CoreML models (generated)
 └── README.md
 ```
 
@@ -204,16 +210,22 @@ uv sync
 uv run coreml_converter/convert2coreml.py
 
 # 5. Copy the result into this project
-cp da3.mlpackage /path/to/streamdiffusion-mac/coreml_models/da3_small.mlpackage
+cp da3.mlpackage /path/to/StreamRGBD-mac/coreml_models/da3_small.mlpackage
 ```
 
 Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
 
-## Phoenix Web UI
+## Phoenix Web UI & Remote Control
 
-A Phoenix project lives in `phx/` and uses **SQLite3** via Ecto for persistence.
-It also includes `StreamdiffusionMac.PipelineAgent`, an Elixir Agent that keeps
-runtime pipeline settings (prompt, blend, preview mode, etc.) in memory.
+A Phoenix project lives in `phx/`. It now includes:
+
+- `StreamdiffusionMac.StreamRGBD` — a GenServer that starts, owns, and stops the
+  Python API process via an Erlang port.
+- `StreamdiffusionMac.PipelineAgent` — an Elixir Agent that keeps lightweight
+  runtime settings in memory.
+- A web dashboard at `/` to start/stop the engine, change the prompt, switch
+  camera/NDI mode, and configure NDI input/output names.
+- JSON endpoints under `/api/stream/*` that delegate to the GenServer.
 
 ### Setup
 
@@ -230,16 +242,69 @@ cd phx
 mix phx.server
 ```
 
-Then open <http://localhost:4000>.
+Then open <http://localhost:4000> for the dashboard, or use the JSON API below.
+
+### Programmatic control (IEx)
+
+```elixir
+StreamdiffusionMac.StreamRGBD.start_engine()
+StreamdiffusionMac.StreamRGBD.set_prompt("cyberpunk city, neon lights")
+StreamdiffusionMac.StreamRGBD.set_input_mode("ndi")
+StreamdiffusionMac.StreamRGBD.set_ndi_input("OBS")
+StreamdiffusionMac.StreamRGBD.set_ndi_output("SD-Render")
+StreamdiffusionMac.StreamRGBD.status()
+StreamdiffusionMac.StreamRGBD.stop_engine()
+```
+
+## HTTP API
+
+`python/streamdiffusion_api.py` exposes a local Flask HTTP API. The GenServer
+starts it automatically, but you can also run it standalone:
+
+```bash
+.venv/bin/python python/streamdiffusion_api.py --port 8787
+```
+
+### Endpoints
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `POST` | `/start` | `{mode, prompt, ndi_source, ndi_output, depth, ...}` | Start the engine |
+| `POST` | `/stop` | — | Stop the engine |
+| `POST` | `/prompt` | `{"prompt": "..."}` | Change the prompt |
+| `POST` | `/input_mode` | `{"mode": "camera|ndi"}` | Switch input source |
+| `POST` | `/ndi_input` | `{"source": "..."}` | Set NDI input source name |
+| `POST` | `/ndi_output` | `{"name": "..."}` | Set NDI output source name |
+| `GET`  | `/status` | — | Read runtime status |
+
+### Examples
+
+```bash
+# Start with NDI input/output
+curl -X POST http://127.0.0.1:8787/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"ndi","prompt":"oil painting","ndi_source":"OBS","ndi_output":"SD-Render"}'
+
+# Change prompt
+curl -X POST http://127.0.0.1:8787/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"watercolor painting"}'
+
+# Read status
+curl http://127.0.0.1:8787/status
+```
 
 ### Useful tasks
 
 ```bash
 # Reset the SQLite database
-mix ecto.reset
+cd phx && mix ecto.reset
 
 # Run tests
-mix test
+cd phx && mix test
+
+# Run precommit checks
+cd phx && mix precommit
 ```
 
 ## Architecture
