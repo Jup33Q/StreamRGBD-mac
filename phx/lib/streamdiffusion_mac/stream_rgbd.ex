@@ -83,6 +83,18 @@ defmodule StreamdiffusionMac.StreamRGBD do
     GenServer.call(__MODULE__, :stop_camera, 15_000)
   end
 
+  @doc "Run Python dependency setup (setup.sh or uv pip install)."
+  @spec run_setup() :: :ok | {:error, String.t()}
+  def run_setup() do
+    StreamdiffusionMac.ModelConverter.run_setup()
+  end
+
+  @doc "Run CoreML model conversion."
+  @spec convert_models() :: :ok | {:error, String.t()}
+  def convert_models() do
+    StreamdiffusionMac.ModelConverter.convert_models()
+  end
+
   @doc "Fetch the current engine status."
   @spec status() :: {:ok, map()} | {:error, any()}
   def status() do

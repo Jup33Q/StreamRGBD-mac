@@ -13,6 +13,7 @@ defmodule StreamdiffusionMac.Application do
       {Phoenix.PubSub, name: StreamdiffusionMac.PubSub},
       StreamdiffusionMac.PipelineAgent,
       StreamdiffusionMac.VideoStreamer,
+      StreamdiffusionMac.ModelConverter,
       StreamdiffusionMac.CameraPreview,
       StreamdiffusionMac.InferenceWorker,
       StreamdiffusionMac.StreamRGBD,

@@ -28,5 +28,7 @@ defmodule StreamdiffusionMacWeb.Router do
     post "/prompt", StreamRGBDController, :prompt
     get "/status", StreamRGBDController, :status
     get "/video", StreamRGBDController, :video
+    post "/setup", StreamRGBDController, :setup
+    post "/convert", StreamRGBDController, :convert
   end
 end

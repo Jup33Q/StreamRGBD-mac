@@ -96,6 +96,16 @@ defmodule StreamdiffusionMacWeb.StreamRGBDController do
     end
   end
 
+  def setup(conn, _params) do
+    Task.start(fn -> StreamdiffusionMac.StreamRGBD.run_setup() end)
+    json(conn, %{ok: true, message: "Setup started. Check terminal for progress."})
+  end
+
+  def convert(conn, _params) do
+    Task.start(fn -> StreamdiffusionMac.StreamRGBD.convert_models() end)
+    json(conn, %{ok: true, message: "Model conversion started. Check terminal for progress."})
+  end
+
   defp respond(conn, {:ok, body}) do
     json(conn, %{ok: true, status: body})
   end

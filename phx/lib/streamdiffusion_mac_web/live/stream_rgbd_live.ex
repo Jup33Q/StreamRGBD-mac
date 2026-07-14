@@ -19,13 +19,16 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(StreamdiffusionMac.PubSub, "stream_rgbd:status")
+      Phoenix.PubSub.subscribe(StreamdiffusionMac.PubSub, "stream_rgbd:terminal")
     end
 
     {:ok,
      assign(socket,
        status: default_status(),
        env: env,
-       starting: false
+       starting: false,
+       terminal_log: "",
+       terminal_running: false
      )}
   end
 
@@ -42,6 +45,31 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
   end
 
   @impl true
+  def handle_info({:terminal, :line, text}, socket) do
+    new_log = socket.assigns.terminal_log <> text
+    # Keep last ~500 lines to avoid memory bloat
+    trimmed = trim_log(new_log)
+    {:noreply, assign(socket, terminal_log: trimmed)}
+  end
+
+  def handle_info({:terminal, :clear, _}, socket) do
+    {:noreply, assign(socket, terminal_log: "")}
+  end
+
+  def handle_info({:terminal, :running, running}, socket) do
+    {:noreply, assign(socket, terminal_running: running)}
+  end
+
+  def handle_info({:terminal, :done, _type}, socket) do
+    env = StreamRGBD.check_environment()
+    {:noreply, assign(socket, env: env, terminal_running: false)}
+  end
+
+  def handle_info({:terminal, :error, _type}, socket) do
+    {:noreply, assign(socket, terminal_running: false)}
+  end
+
+  @impl true
   @spec handle_event(String.t(), map(), Phoenix.LiveView.Socket.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
   def handle_event("start_engine", _params, socket) do
@@ -52,7 +80,7 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
        put_flash(
          socket,
          :error,
-         "CoreML models not found. Run: python python/scripts/convert_models.py"
+         "CoreML models not found. Run Setup → Convert Models first."
        )}
     else
       socket = assign(socket, starting: true)
@@ -101,6 +129,20 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
     {:noreply, assign(socket, env: env)}
   end
 
+  def handle_event("run_setup", _params, socket) do
+    Task.start(fn -> StreamRGBD.run_setup() end)
+    {:noreply, socket}
+  end
+
+  def handle_event("convert_models", _params, socket) do
+    Task.start(fn -> StreamRGBD.convert_models() end)
+    {:noreply, socket}
+  end
+
+  def handle_event("clear_terminal", _params, socket) do
+    {:noreply, assign(socket, terminal_log: "")}
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -121,8 +163,7 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
             <p>CoreML directory: <code class="bg-base-300 px-1 rounded">{@env.coreml_dir}</code></p>
             <p>Missing models: {Enum.join(@env.missing_models, ", ")}</p>
             <p class="mt-1">
-              Run in terminal:<br />
-              <code class="bg-base-300 px-1 rounded">python python/scripts/convert_models.py</code>
+              Use the Terminal panel below to run Setup → Convert Models.
             </p>
             <button phx-click="check_env" class="btn btn-sm btn-outline mt-2">Recheck</button>
           </div>
@@ -160,8 +201,7 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
             </div>
             <p class="text-xs text-base-content/60 mt-3">
               Starting spawns the Python inference worker via CLI and begins the
-              Membrane camera pipeline. The JSON response includes the instance
-              <code class="bg-base-300 px-1 rounded">thread_id</code>.
+              Membrane camera pipeline.
             </p>
           </div>
         </section>
@@ -188,8 +228,7 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
               </button>
             </div>
             <p class="text-xs text-base-content/60 mt-3">
-              Opens the raw camera feed without AI inference. Useful for testing
-              camera availability before starting the full engine.
+              Opens the raw camera feed without AI inference.
             </p>
           </div>
         </section>
@@ -218,6 +257,41 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
               <dt class="text-base-content/60">Error</dt>
               <dd class="font-mono text-error">{@status.error || "—"}</dd>
             </dl>
+          </div>
+        </section>
+
+        <%!-- Terminal / Environment management --%>
+        <section class="card bg-base-200 shadow-sm md:col-span-2">
+          <div class="card-body">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title">Terminal</h2>
+              <div class="flex gap-2">
+                <button
+                  phx-click="run_setup"
+                  disabled={@terminal_running}
+                  class="btn btn-sm btn-outline"
+                >
+                  <%= if @terminal_running do %>
+                    <span class="loading loading-spinner loading-xs"></span>
+                  <% end %>
+                  Setup
+                </button>
+                <button
+                  phx-click="convert_models"
+                  disabled={@terminal_running}
+                  class="btn btn-sm btn-primary"
+                >
+                  <%= if @terminal_running do %>
+                    <span class="loading loading-spinner loading-xs"></span>
+                  <% end %>
+                  Convert Models
+                </button>
+                <button phx-click="clear_terminal" class="btn btn-sm btn-ghost">Clear</button>
+              </div>
+            </div>
+            <div class="mt-3 rounded-lg bg-neutral text-neutral-content p-3 font-mono text-xs overflow-auto" style="max-height: 300px;" id="terminal-output" phx-update="ignore">
+              <pre class="whitespace-pre-wrap break-all"><%= @terminal_log %></pre>
+            </div>
           </div>
         </section>
 
@@ -283,4 +357,11 @@ defmodule StreamdiffusionMacWeb.StreamRGBDLive do
       error: nil
     }
   end
+
+  @max_terminal_chars 50_000
+  defp trim_log(log) when byte_size(log) > @max_terminal_chars do
+    String.slice(log, -@max_terminal_chars, @max_terminal_chars)
+  end
+
+  defp trim_log(log), do: log
 end
