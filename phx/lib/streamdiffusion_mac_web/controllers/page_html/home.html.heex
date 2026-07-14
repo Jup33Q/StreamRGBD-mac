@@ -1,0 +1,102 @@
+<Layouts.app flash={@flash}>
+  <div class="space-y-8">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">StreamDiffusion RGBD</h1>
+      <p class="mt-2 text-base-content/70">
+        Control the local Python StreamDiffusion engine. Start the engine,
+        switch prompts, and change NDI or camera input from this dashboard.
+      </p>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2">
+      <%!-- Engine lifecycle --%>
+      <section class="card bg-base-200 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title">Engine</h2>
+          <div class="flex flex-wrap gap-3 mt-2">
+            <form action="/api/stream/start" method="post" target="_blank">
+              <button type="submit" class="btn btn-primary">Start Engine</button>
+            </form>
+            <form action="/api/stream/stop" method="post" target="_blank">
+              <button type="submit" class="btn btn-secondary">Stop Engine</button>
+            </form>
+            <a href="/api/stream/status" target="_blank" class="btn btn-outline">Status</a>
+          </div>
+        </div>
+      </section>
+
+      <%!-- Prompt --%>
+      <section class="card bg-base-200 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title">Prompt</h2>
+          <form action="/api/stream/prompt" method="post" target="_blank" class="mt-2">
+            <div class="join w-full">
+              <input
+                type="text"
+                name="prompt"
+                placeholder="oil painting style, masterpiece"
+                class="input input-bordered join-item flex-1"
+                required
+              />
+              <button type="submit" class="btn btn-primary join-item">Set</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <%!-- Input mode --%>
+      <section class="card bg-base-200 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title">Input Mode</h2>
+          <form action="/api/stream/input_mode" method="post" target="_blank" class="mt-2">
+            <div class="join w-full">
+              <select name="mode" class="select select-bordered join-item flex-1" required>
+                <option value="camera">Camera</option>
+                <option value="ndi">NDI</option>
+              </select>
+              <button type="submit" class="btn btn-primary join-item">Switch</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <%!-- NDI settings --%>
+      <section class="card bg-base-200 shadow-sm md:col-span-2">
+        <div class="card-body">
+          <h2 class="card-title">NDI Settings</h2>
+          <div class="grid gap-4 mt-2 md:grid-cols-2">
+            <form action="/api/stream/ndi_input" method="post" target="_blank" class="flex gap-2">
+              <input
+                type="text"
+                name="source"
+                placeholder="NDI input source name"
+                class="input input-bordered flex-1"
+                required
+              />
+              <button type="submit" class="btn btn-primary">Set Input</button>
+            </form>
+            <form action="/api/stream/ndi_output" method="post" target="_blank" class="flex gap-2">
+              <input
+                type="text"
+                name="name"
+                placeholder="NDI output source name"
+                class="input input-bordered flex-1"
+                required
+              />
+              <button type="submit" class="btn btn-primary">Set Output</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="text-sm text-base-content/60">
+      <p>
+        Responses open in a new tab as JSON. Use
+        <code class="bg-base-300 px-1 rounded">StreamdiffusionMac.StreamRGBD</code>
+        from <code class="bg-base-300 px-1 rounded">iex -S mix</code>
+        for programmatic control.
+      </p>
+    </div>
+  </div>
+</Layouts.app>

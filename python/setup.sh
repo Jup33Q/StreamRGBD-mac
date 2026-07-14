@@ -67,7 +67,9 @@ echo "Python: $PY_VERSION"
 echo ""
 
 # --- Create virtual environment ---
-VENV_DIR="$(cd "$(dirname "$0")" && pwd)/.venv"
+# Keep the virtualenv at the project root so both Python and Phoenix can find it.
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV_DIR="$PROJECT_ROOT/.venv"
 
 if [[ -d "$VENV_DIR" ]]; then
     echo "Virtual environment already exists at $VENV_DIR"
@@ -135,8 +137,8 @@ echo "  source $VENV_DIR/bin/activate"
 echo ""
 echo "Next steps:"
 echo "  1. Convert models to CoreML:"
-echo "     python scripts/convert_models.py"
+echo "     python python/scripts/convert_models.py"
 echo ""
 echo "  2. Run the camera pipeline:"
-echo "     python camera.py --prompt 'oil painting style'"
+echo "     python python/camera.py --prompt 'oil painting style'"
 echo ""

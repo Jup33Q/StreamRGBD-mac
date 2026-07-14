@@ -33,7 +33,7 @@ import numpy as np
 import cv2
 import coremltools as ct
 
-COREML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coreml_models")
+COREML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "coreml_models")
 
 DEFAULT_PROMPTS = [
     "oil painting style, masterpiece, highly detailed",

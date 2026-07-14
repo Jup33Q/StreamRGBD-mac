@@ -1,0 +1,34 @@
+defmodule StreamdiffusionMacWeb.Router do
+  use StreamdiffusionMacWeb, :router
+
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, html: {StreamdiffusionMacWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+  end
+
+  pipeline :api do
+    plug :accepts, ["json"]
+  end
+
+  scope "/", StreamdiffusionMacWeb do
+    pipe_through :browser
+
+    get "/", PageController, :home
+  end
+
+  scope "/api/stream", StreamdiffusionMacWeb do
+    pipe_through :api
+
+    post "/start", StreamRGBDController, :start
+    post "/stop", StreamRGBDController, :stop
+    post "/prompt", StreamRGBDController, :prompt
+    post "/input_mode", StreamRGBDController, :input_mode
+    post "/ndi_input", StreamRGBDController, :ndi_input
+    post "/ndi_output", StreamRGBDController, :ndi_output
+    get "/status", StreamRGBDController, :status
+  end
+end

@@ -10,6 +10,10 @@ build/
 # CoreML models (large files, not committed)
 coreml_models/
 
+# Depth Anything 3 conversion workspace (downloaded during conversion)
+Depth-Anything-3-for-CoreML/
+DA3-SMALL/
+
 # OS
 .DS_Store
 *.swp
@@ -19,6 +23,9 @@ coreml_models/
 # IDE
 .vscode/
 .idea/
+
+# Erlang VM crash dump
+erl_crash.dump
 
 # Captures
 capture_*.png

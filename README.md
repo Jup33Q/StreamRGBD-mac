@@ -20,21 +20,37 @@ cd streamdiffusion-mac
 
 # 2. Setup environment
 chmod +x setup.sh
-./setup.sh
+python/setup.sh
 
 # 3. Activate
 source .venv/bin/activate
 
 # 4. Convert models to CoreML (one-time, ~5 minutes)
-python scripts/convert_models.py
+python python/scripts/convert_models.py
 
 # 5. Run camera
-python camera.py --prompt "oil painting style, masterpiece"
+python python/camera.py --prompt "oil painting style, masterpiece"
+```
+
+## Project Layout
+
+```
+.
+├── python/          # Python StreamDiffusion + RGBD pipeline
+│   ├── camera.py
+│   ├── camera_rgbd.py
+│   ├── requirements.txt
+│   └── setup.sh
+├── phx/             # Elixir Phoenix web UI (SQLite3)
+│   └── lib/streamdiffusion_mac/
+│       └── pipeline_agent.ex
+├── coreml_models/   # Converted CoreML models (generated)
+└── README.md
 ```
 
 ## Dependencies
 
-`setup.sh` installs all dependencies from `requirements.txt`. Key version constraints:
+`python/setup.sh` installs all dependencies from `python/requirements.txt`. Key version constraints:
 
 | Package | Default | Legacy (`--legacy`) |
 |---------|---------|---------------------|
@@ -48,11 +64,11 @@ python camera.py --prompt "oil painting style, masterpiece"
 
 ### Troubleshooting
 
-If `./setup.sh` fails or you experience issues, try the legacy profile:
+If `python/setup.sh` fails or you experience issues, try the legacy profile:
 
 ```bash
 rm -rf .venv
-./setup.sh --legacy
+python/setup.sh --legacy
 ```
 
 ## Manual Installation
@@ -65,13 +81,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r python/requirements.txt
 
 # Convert models
-python scripts/convert_models.py
+python python/scripts/convert_models.py
 
 # Run
-python camera.py
+python python/camera.py
 ```
 
 ## Usage
@@ -80,13 +96,13 @@ python camera.py
 
 ```bash
 # Default (SDXS-512, best speed/quality balance)
-python camera.py --prompt "oil painting style, masterpiece"
+python python/camera.py --prompt "oil painting style, masterpiece"
 
 # Watercolor style
-python camera.py --prompt "watercolor painting, soft brushstrokes"
+python python/camera.py --prompt "watercolor painting, soft brushstrokes"
 
 # With built-in prompt gallery (10 styles, press n/p to switch)
-python camera.py --prompts
+python python/camera.py --prompts
 ```
 
 ### Camera Controls
@@ -103,33 +119,127 @@ python camera.py --prompts
 
 ```bash
 # Use SD-Turbo instead of SDXS (slower but different style)
-python camera.py --model sd-turbo --prompt "anime style"
+python python/camera.py --model sd-turbo --prompt "anime style"
 
 # Blend camera with AI output (30% camera)
-python camera.py --blend 0.3
+python python/camera.py --blend 0.3
 
 # Adjust temporal smoothing
-python camera.py --ema 0.9 --feedback 0.4
+python python/camera.py --ema 0.9 --feedback 0.4
 
 # Lower resolution for faster inference on smaller Macs
-python camera.py --render-size 384
+python python/camera.py --render-size 384
 
 # Select camera device
-python camera.py --camera 1
+python python/camera.py --camera 1
 ```
 
 ### Model Conversion
 
 ```bash
 # Convert SDXS-512 (default, recommended)
-python scripts/convert_models.py
+python python/scripts/convert_models.py
 
 # Convert SD-Turbo
-python scripts/convert_models.py --model sd-turbo
+python python/scripts/convert_models.py --model sd-turbo
 
 # Custom output directory
-python scripts/convert_models.py --output-dir ./my_models
-python camera.py --coreml-dir ./my_models
+python python/scripts/convert_models.py --output-dir ./my_models
+python python/camera.py --coreml-dir ./my_models
+```
+
+## RGBD Output (Depth Anything)
+
+`camera_rgbd.py` extends the pipeline to produce a 4-channel RGBD frame:
+StreamDiffusion's AI output is used as the RGB image, Depth Anything estimates
+depth, and the two are concatenated into `H x W x 4` uint8 (RGB + depth as alpha).
+
+### Backends (auto-selected)
+
+1. **CoreML DA3-Small** (recommended on macOS / Apple Silicon) — load a pre-converted `.mlpackage`.
+2. **PyTorch DA3-Small** — requires the official `depth_anything_3` package.
+3. **PyTorch DA2-Small** — Hugging Face Transformers pipeline, works out-of-the-box on macOS.
+
+### Usage
+
+```bash
+# Default: auto-selects CoreML -> DA3 PyTorch -> DA2 PyTorch
+python python/camera_rgbd.py --prompt "oil painting style, masterpiece"
+
+# Force the Transformers V2 model (no extra dependencies)
+python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small --prompt "watercolor"
+```
+
+Press `s` while running to save `capture_rgbd_<timestamp>.png` (RGBA) and a side-by-side visualization.
+
+```bash
+# Preview depth as a grayscale alpha overlay
+python python/camera_rgbd.py --depth-preview-mode alpha --prompt "oil painting style"
+
+# Preview depth as a colored alpha overlay
+python python/camera_rgbd.py --depth-preview-mode alpha_color --prompt "oil painting style"
+
+# Cycle preview modes at runtime by pressing `m`
+```
+
+### Converting DA3-Small to CoreML
+
+The official Depth Anything 3 package is not yet easy to install on macOS, but a
+community CoreML converter is available:
+
+```bash
+# 1. Clone the converter and the DA3-SMALL weights
+git clone https://github.com/LSQzzx/Depth-Anything-3-for-CoreML.git
+cd Depth-Anything-3-for-CoreML
+
+# 2. Install uv and git-lfs if needed
+brew install uv git-lfs
+git lfs install
+
+# 3. Download weights
+git clone https://huggingface.co/depth-anything/DA3-SMALL
+
+# 4. Convert
+uv sync
+uv run coreml_converter/convert2coreml.py
+
+# 5. Copy the result into this project
+cp da3.mlpackage /path/to/streamdiffusion-mac/coreml_models/da3_small.mlpackage
+```
+
+Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
+
+## Phoenix Web UI
+
+A Phoenix project lives in `phx/` and uses **SQLite3** via Ecto for persistence.
+It also includes `StreamdiffusionMac.PipelineAgent`, an Elixir Agent that keeps
+runtime pipeline settings (prompt, blend, preview mode, etc.) in memory.
+
+### Setup
+
+```bash
+cd phx
+mix deps.get
+mix ecto.setup
+```
+
+### Run
+
+```bash
+cd phx
+mix phx.server
+```
+
+Then open <http://localhost:4000>.
+
+### Useful tasks
+
+```bash
+# Reset the SQLite database
+mix ecto.reset
+
+# Run tests
+mix test
 ```
 
 ## Architecture
