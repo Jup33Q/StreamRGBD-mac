@@ -72,7 +72,11 @@ Or use the convenience launcher scripts (after setup):
 │   ├── camera_ndi.py             # NDI input support
 │   ├── camera_to_ndi.py          # Basic camera → NDI forwarding (no AI)
 │   ├── camera_lora.py            # LoRA model support
+│   ├── camera_preview.py         # JPEG preview worker (legacy Erlang Port helper)
+│   ├── inference_worker.py       # Headless CoreML worker (legacy Erlang Port helper)
+│   ├── lkg_bridge.py             # Looking Glass holographic display bridge
 │   ├── download_loras.py         # LoRA batch downloader from HuggingFace
+│   ├── download_loras_civitai.py # LoRA downloader for Civitai models
 │   ├── streamdiffusion_api.py    # Flask HTTP API for remote control
 │   ├── ndi_scanner_gui.py        # GUI: scan available NDI sources
 │   ├── stream_rgbd_gui.py        # GUI: control panel for stream_rgbd (legacy)
@@ -80,8 +84,14 @@ Or use the convenience launcher scripts (after setup):
 │   ├── models.py                 # peewee ORM models (SQLite)
 │   ├── db_init.py                # Database initialization & seed data
 │   ├── tk_style.py               # Window style module (light/dark theme)
+│   ├── DATABASE_GUI_USAGE.md     # Database & GUI integration guide
 │   ├── requirements.txt
+│   ├── requirements-legacy.txt   # Legacy dependency versions
 │   └── setup.sh
+│   └── scripts/                  # Model conversion scripts
+│       ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML
+│       ├── convert_da3_coreml_v4.py  # Convert DA3-Small to CoreML
+│       └── convert_depth_model.py    # Convert depth models to CoreML
 ├── data/                         # SQLite database & app data
 ├── coreml_models/               # Converted CoreML models (generated)
 ├── python/loras/                # Downloaded LoRA models (*.safetensors)
@@ -409,7 +419,8 @@ python python/db_init.py
 ```
 
 Database features:
-- **Model & ModelType tables**: Manage LoRA, Depth, and StreamDiffusion model categories
+- **Model & ModelType tables**: Manage StreamDiffusion, Depth, and LoRA model metadata
+- **Categorized LoRA tables**: `StyleLoraModel`, `SubjectLoraModel`, and `QualityLoraModel` with `category`/`sub_type` fields for organized LoRA management
 - **Prompt tables (3 categories)**:
   - `StylePrompt` — style descriptors (e.g. "oil painting, classical portrait")
   - `SubjectPrompt` — subject themes (e.g. "majestic dragon soaring through clouds")
