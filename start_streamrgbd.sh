@@ -3,6 +3,9 @@
 # StreamRGBD Camera Inference Launcher
 # Auto-activates venv and runs the RGBD pipeline
 
+# Enable MPS fallback for unsupported ops (e.g. upsample_bicubic2d in DA3 on Apple Silicon)
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
@@ -16,7 +19,6 @@ source .venv/bin/activate
 python python/camera_rgbd.py \
     --prompt "oil painting style, masterpiece" \
     --render-size 512 \
-    --depth-backend pytorch \
-    --depth-model da2-small \
+    --depth-backend auto \
     --ndi-output "StreamDiffusion-RGBD" \
     "$@"

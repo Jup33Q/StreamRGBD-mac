@@ -151,12 +151,13 @@ class Pipeline:
     """CoreML img2img pipeline with temporal coherence."""
 
     def __init__(self, model_name, render_size, output_size, prompt,
-                 strength=0.5, prompts=None, latent_feedback=0.3, coreml_dir=COREML_DIR):
+                 strength=0.5, prompts=None, latent_feedback=0.3, coreml_dir=COREML_DIR, seed=42):
         import torch
         self.model_name = model_name
         self.render_size = render_size
         self.output_size = output_size
         self.latent_size = render_size // 8
+        self._seed = seed
         cfg = MODEL_CONFIGS[model_name]
 
         print("\n--- Loading CoreML Models ---")
@@ -230,10 +231,11 @@ class Pipeline:
         torch.mps.empty_cache()
 
         # Fixed noise for temporal coherence
-        rng = np.random.RandomState(42)
+        rng = np.random.RandomState(self._seed)
         self._fixed_noise = rng.randn(1, 4, self.latent_size, self.latent_size).astype(np.float16)
         self._prev_denoised = None
         self.latent_feedback = latent_feedback
+        print(f"  Seed: {self._seed}")
 
         print("  Warming up CoreML...")
         self._warmup()
@@ -261,6 +263,39 @@ class Pipeline:
         self._current_prompt = self._all_prompts[self._prompt_index]
         return self._current_prompt
 
+    def set_prompt(self, prompt):
+        """Set a new prompt at runtime and re-encode it."""
+        import torch
+        with torch.no_grad():
+            ti = self._tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=self._tokenizer.model_max_length,
+                truncation=True,
+                return_tensors="pt",
+            )
+            embeds = (
+                self._text_encoder(ti.input_ids.to("mps"))[0]
+                .cpu()
+                .to(torch.float16)
+                .numpy()
+            )
+        self._all_prompts = [prompt]
+        self._all_embeds = [embeds]
+        self._prompt_index = 0
+        self._target_embeds = embeds
+        self._current_prompt = prompt
+        return prompt
+
+    def set_seed(self, seed):
+        """Set a new random seed and regenerate fixed noise."""
+        self._seed = int(seed)
+        rng = np.random.RandomState(self._seed)
+        self._fixed_noise = rng.randn(1, 4, self.latent_size, self.latent_size).astype(np.float16)
+        self._prev_denoised = None
+        print(f"  Seed updated: {self._seed}")
+        return self._seed
+
     def _warmup(self, n=25):
         np.copyto(self._img_buf, np.random.randn(1, 3, self.render_size, self.render_size).astype(np.float16))
         for _ in range(n):
@@ -274,6 +309,10 @@ class Pipeline:
             self.vae_decoder.predict({"latent": self._out_buf})
 
     def process_frame(self, frame_bgr):
+        """Full pipeline: preprocess → VAE enc → UNet → VAE dec → postprocess."""
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        r = self.process_frame_rgb(rgb)
+        return cv2.cvtColor(r, cv2.COLOR_RGB2BGR)
         """Full pipeline: preprocess → VAE enc → UNet → VAE dec → postprocess."""
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         return self.process_frame_rgb(rgb)
@@ -544,6 +583,8 @@ def main():
                         help="EMA smoothing (0=none, 0.9=heavy)")
     parser.add_argument("--feedback", type=float, default=0.1,
                         help="Latent feedback (0=none, 0.3=30%% prev frame)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for fixed noise (changes image texture)")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--coreml-dir", type=str, default=COREML_DIR)
     args = parser.parse_args()
@@ -564,6 +605,7 @@ def main():
         prompts=prompts,
         latent_feedback=args.feedback,
         coreml_dir=args.coreml_dir,
+        seed=args.seed,
     )
 
     app = CameraApp(

@@ -2,6 +2,9 @@
 
 # Stream RGBD GUI 启动器
 
+# Enable MPS fallback for unsupported ops (e.g. upsample_bicubic2d in DA3 on Apple Silicon)
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
@@ -12,4 +15,4 @@ fi
 
 source .venv/bin/activate
 
-python python/stream_rgbd_gui.py "$@"
+python python/stream_rgbd_gui_db.py "$@"

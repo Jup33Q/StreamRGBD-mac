@@ -36,13 +36,19 @@ source .venv/bin/activate
 # 4. Convert models to CoreML (one-time, ~5 minutes)
 python python/scripts/convert_models.py
 
-# 5. Run camera
+# 5. (Optional) Download LoRAs for style/character control
+./start_download_loras.sh
+
+# 6. Run camera
 python python/camera.py --prompt "oil painting style, masterpiece"
 ```
 
 Or use the convenience launcher scripts (after setup):
 
 ```bash
+# Download all recommended LoRAs (26 style + character models)
+./start_download_loras.sh
+
 # RGBD + NDI output (color + depth channels)
 ./start_streamrgbd.sh
 
@@ -65,16 +71,24 @@ Or use the convenience launcher scripts (after setup):
 │   ├── camera_rgbd.py            # RGBD pipeline with depth + NDI output
 │   ├── camera_ndi.py             # NDI input support
 │   ├── camera_to_ndi.py          # Basic camera → NDI forwarding (no AI)
+│   ├── camera_lora.py            # LoRA model support
+│   ├── download_loras.py         # LoRA batch downloader from HuggingFace
 │   ├── streamdiffusion_api.py    # Flask HTTP API for remote control
 │   ├── ndi_scanner_gui.py        # GUI: scan available NDI sources
-│   ├── stream_rgbd_gui.py        # GUI: control panel for stream_rgbd
+│   ├── stream_rgbd_gui.py        # GUI: control panel for stream_rgbd (legacy)
+│   ├── stream_rgbd_gui_db.py     # GUI: database-enhanced control panel
+│   ├── models.py                 # peewee ORM models (SQLite)
+│   ├── db_init.py                # Database initialization & seed data
 │   ├── tk_style.py               # Window style module (light/dark theme)
 │   ├── requirements.txt
 │   └── setup.sh
+├── data/                         # SQLite database & app data
 ├── coreml_models/               # Converted CoreML models (generated)
+├── python/loras/                # Downloaded LoRA models (*.safetensors)
 ├── start_streamrgbd.sh          # Convenience launcher (RGBD + NDI out)
-├── start_streamrgbd_gui.sh      # GUI launcher for stream_rgbd
+├── start_streamrgbd_gui.sh      # GUI launcher (database-enhanced)
 ├── start_camera_to_ndi.sh       # Launcher for camera → NDI forwarding
+├── start_download_loras.sh      # Launcher for LoRA batch download
 ├── start_ndi_scanner.sh         # Launcher for NDI source scanner GUI
 └── README.md
 ```
@@ -226,6 +240,26 @@ python python/camera_rgbd.py --depth-preview-mode alpha_color --prompt "oil pain
 
 ### Converting DA3-Small to CoreML
 
+A built-in conversion script is provided to generate the CoreML `.mlpackage` from the official DA3-SMALL weights:
+
+```bash
+# 1. Ensure DA3-SMALL weights are cached by Hugging Face
+#    (they will be downloaded automatically on first use)
+
+# 2. Run the built-in converter
+python python/scripts/convert_da3_coreml_v4.py
+
+# 3. The model is saved to coreml_models/da3_small.mlpackage
+```
+
+Requirements:
+- `depth_anything_3` source must be available at `/tmp/depth-anything-3/src` (clone from [ByteDance-Seed/Depth-Anything-3](https://github.com/ByteDance-Seed/Depth-Anything-3))
+- DA3-SMALL weights cached at `~/.cache/huggingface/hub/models--depth-anything--DA3-SMALL/...`
+
+Once converted, `camera_rgbd.py --depth-backend auto` will automatically load the CoreML model for the fastest depth inference on Apple Silicon.
+
+> **Note**: The conversion replaces `bicubic` interpolation (unsupported by CoreML) with `bilinear`, and disables multi-view `alt_start` (single-view depth only). These changes do not affect depth estimation quality for single-image inputs.
+
 The official Depth Anything 3 package is not yet easy to install on macOS, but a
 community CoreML converter is available:
 
@@ -283,6 +317,49 @@ For basic camera capture without AI processing, use `camera_to_ndi.py`:
 
 ## GUI Tools
 
+### LoRA Downloader
+
+Two download sources are supported: **HuggingFace** (default, no API key) and **Civitai** (larger selection, requires API key).
+
+#### HuggingFace (26 LoRAs, no key required)
+
+```bash
+# Download all LoRAs (one-time, ~1-2GB total)
+./start_download_loras.sh
+
+# List available LoRAs
+python python/download_loras.py --list
+
+# Download a specific LoRA
+python python/download_loras.py --name moxin_ink
+
+# Scan locally downloaded LoRAs
+python python/download_loras.py --scan
+```
+
+#### Civitai (24 LoRAs, requires API key)
+
+Get your free API key at https://civitai.com/user/account
+
+```bash
+# Download all curated Civitai LoRAs (24 style + character models)
+./start_download_loras_civitai.sh
+
+# Or with explicit API key
+CIVITAI_API_KEY=your_key ./start_download_loras_civitai.sh
+
+# Search Civitai for new LoRAs
+python python/download_loras_civitai.py --search "kimono"
+
+# Download a specific LoRA from registry
+python python/download_loras_civitai.py --name detail-tweaker
+
+# Download any Civitai model by ID
+python python/download_loras_civitai.py --download 58390 62833 --output-name detail-tweaker
+```
+
+Downloaded LoRAs are saved to `python/loras/` and automatically registered in the SQLite database (`db_init.py`). The database-enhanced GUI allows selecting LoRAs with weight slider control.
+
 ### NDI Source Scanner
 
 A GUI application to scan and list all available NDI sources on the local network.
@@ -309,10 +386,41 @@ A GUI control panel for configuring and launching the Stream RGBD pipeline with 
 ```
 
 Features:
-- Visual parameter configuration (prompt, model, render size, depth backend, NDI output, etc.)
-- Start/Stop button control
-- Real-time log output panel
+- **Visual parameter configuration** (prompt, model, render size, depth backend, NDI output, etc.)
+- **Start/Stop button control**
+- **Real-time prompt update** while running (green button + status label)
+- **Real-time log output panel**
 - All `camera_rgbd.py` arguments accessible via GUI
+
+### Stream RGBD Database-Enhanced GUI
+
+`stream_rgbd_gui_db.py` extends the control panel with **peewee/SQLite** database integration:
+
+```bash
+# Install peewee (included in requirements.txt)
+source .venv/bin/activate
+pip install peewee
+
+# Initialize database (creates tables + seed data)
+python python/db_init.py
+
+# Launch the GUI
+./start_streamrgbd_gui.sh
+```
+
+Database features:
+- **Model & ModelType tables**: Manage LoRA, Depth, and StreamDiffusion model categories
+- **Prompt tables (3 categories)**:
+  - `StylePrompt` — style descriptors (e.g. "oil painting, classical portrait")
+  - `SubjectPrompt` — subject themes (e.g. "majestic dragon soaring through clouds")
+  - `QualityPrompt` — quality modifiers (e.g. "masterpiece, best quality, 8k")
+- **Category random buttons**: 🎲 Style / 🎲 Subject / 🎲 Quality buttons randomize each category independently
+- **Combined prompt display**: Auto-joins `style + subject + quality` with comma separators; copy-to-clipboard button
+- **Slider controls**: Strength / Blend / EMA with real-time value display (0.00–1.00 / 0.00–0.99)
+- **Settings persistence**: Save/load GUI parameters via `AppSettings` table
+- **Prompt management window**: Browse all stored prompts in a 3-tab notebook (Style/Subject/Quality)
+
+> **Note**: The database-enhanced GUI gracefully falls back to built-in default data if the database is unavailable.
 
 ## Architecture
 
@@ -415,6 +523,8 @@ This project is built entirely on Python with the following core stack:
 | **Numeric** | NumPy 1.x (< 2.0) | Tensor operations, buffer management |
 | **Depth Estimation** | transformers, depth_anything_3 | Depth Anything V2/V3 backends |
 | **Build** | setuptools | Python environment setup (shim for coremltools) |
+| **Database** | peewee 3.17+ | SQLite ORM for models & prompt management |
+| **LoRA Download** | huggingface_hub | Batch download LoRA weights from HuggingFace |
 
 ### Referenced Models & Code
 

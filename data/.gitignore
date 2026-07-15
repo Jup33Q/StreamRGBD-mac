@@ -1,0 +1,11 @@
+# SQLite WAL temporary files (auto-generated, do not commit)
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Database backups
+*.backup.*
+*.db.bak
+
+# Allow the main database to be tracked
+!streamdiffusion.db

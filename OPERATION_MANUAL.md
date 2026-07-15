@@ -64,6 +64,24 @@ source .venv/bin/activate
 # python/setup.sh --legacy
 ```
 
+### 2.2 下载 LoRA 模型（可选但推荐）
+
+LoRA 模型用于实时风格迁移和角色/服装控制。项目提供两个下载源：
+
+**HuggingFace（无需 API Key，26 个 LoRA）**：
+```bash
+./start_download_loras.sh
+```
+
+**Civitai（需要 API Key，24 个 LoRA）**：
+```bash
+# 获取 API Key: https://civitai.com/user/account
+export CIVITAI_API_KEY=your_key_here
+./start_download_loras_civitai.sh
+```
+
+下载的 LoRA 保存在 `python/loras/` 目录，数据库会自动记录模型信息。
+
 ---
 
 ## 3. 模型转换（首次）
@@ -125,7 +143,34 @@ python python/camera.py --prompt "oil painting style, masterpiece"
 python python/camera_rgbd.py --prompt "oil painting style, masterpiece"
 ```
 
-### 4.3 启动后
+### 4.3 数据库增强版 GUI（推荐）
+
+`stream_rgbd_gui_db.py` 在原有 GUI 基础上集成了 **peewee/SQLite** 数据库，提供更强大的提示词管理和参数控制功能。
+
+```bash
+# 1. 确保虚拟环境已激活
+source .venv/bin/activate
+
+# 2. 初始化数据库（首次运行，创建表 + 插入种子数据）
+python python/db_init.py
+
+# 3. 启动 GUI
+./start_streamrgbd_gui.sh
+```
+
+**数据库功能**：
+- **模型管理**：支持 LoRA、Depth、StreamDiffusion 等模型分类
+- **提示词三表拆分**：
+  - **Style（风格）**：如 "oil painting, classical portrait"
+  - **Subject（主题）**：如 "majestic dragon soaring through clouds"
+  - **Quality（质量）**：如 "masterpiece, best quality, 8k"
+- **独立随机按钮**：每个类别有独立的 🎲 随机按钮，单独随机
+- **合并提示词**：自动按 `style + subject + quality` 顺序用逗号拼接
+- **Slider 控制**：Strength / Blend / EMA 用滑块控制，实时显示数值
+- **设置持久化**：点击「💾 保存设置」可将当前参数保存到数据库
+- **提示词管理窗口**：点击「📝 提示词管理」浏览和查看三表数据
+
+> 如果数据库未连接，GUI 会自动使用内置 fallback 数据，不影响正常使用。
 
 首次启动时，macOS 会弹出**摄像头权限请求**，点击**"允许"**即可。
 
@@ -264,6 +309,9 @@ python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small
 | 画面闪烁 | 反馈参数不合适 | 增加 `--feedback` 到 0.2-0.3 |
 | 深度图未输出 | 深度模型未安装 | 使用 `--depth-backend=pytorch --depth-model da2-small` |
 | 窗口无法显示 | 无 GUI 环境 | 在 Terminal.app 中运行，而非后台/SSH |
+| **数据库初始化失败** | peewee 未安装 | `source .venv/bin/activate && pip install peewee` |
+| **数据库表不存在** | 未运行 db_init.py | `python python/db_init.py` |
+| **GUI 提示 "数据库离线"** | data/streamdiffusion.db 缺失 | 运行 `python python/db_init.py` 初始化 |
 
 ### 8.2 摄像头权限重置
 
@@ -313,10 +361,18 @@ python python/camera_rgbd.py --render-size 512
 | `python/camera_lora.py` | LoRA 模型支持 |
 | `python/streamdiffusion_api.py` | 独立 HTTP API（Flask） |
 | `python/inference_worker.py` | Port 子进程（Erlang 集成用） |
+| `python/stream_rgbd_gui.py` | 基础 GUI 控制面板 |
+| `python/stream_rgbd_gui_db.py` | **数据库增强版 GUI**（peewee + SQLite） |
+| `python/models.py` | peewee ORM 模型定义 |
+| `python/db_init.py` | 数据库初始化与种子数据 |
 | `python/scripts/convert_models.py` | CoreML 模型转换 |
 | `python/scripts/convert_depth_model.py` | 深度模型 CoreML 转换 |
-| `start_streamrgbd.sh` | 一键启动脚本 |
+| `start_streamrgbd.sh` | 一键启动脚本（RGBD 命令行） |
+| `start_streamrgbd_gui.sh` | GUI 启动脚本（数据库版） |
+| `start_download_loras.sh` | HuggingFace LoRA 批量下载脚本 |
+| `start_download_loras_civitai.sh` | Civitai LoRA 批量下载脚本 |
 | `coreml_models/` | 转换后的 CoreML 模型目录 |
+| `data/` | SQLite 数据库文件目录 |
 
 ---
 
@@ -346,4 +402,4 @@ python python/camera_rgbd.py \
 
 ---
 
-*手册更新：2025-07-15（移除 Phoenix 前端，改为纯 Python 命令行版）*
+*手册更新：2026-07-15（新增 peewee/SQLite 数据库增强版 GUI，支持三表拆分提示词、Slider 控制、设置持久化）*

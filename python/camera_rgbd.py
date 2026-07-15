@@ -43,9 +43,18 @@ import numpy as np
 import cv2
 import torch
 
+# Python 3.12 compat: coremltools imports distutils
+if "distutils" not in sys.modules:
+    try:
+        import setuptools
+        sys.modules["distutils"] = setuptools._distutils
+    except Exception:
+        pass
+
 # Re-use the CoreML img2img pipeline from the original camera.py
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from camera import Pipeline, DEFAULT_PROMPTS, MODEL_CONFIGS, COREML_DIR
+from lkg_bridge import create_lkg_renderer, LKGRGBDRenderer
 
 
 def _default_device():
@@ -180,7 +189,13 @@ class TorchDepthEstimator:
             if _mod_name not in sys.modules:
                 sys.modules[_mod_name] = types.ModuleType(_mod_name)
         from depth_anything_3.api import DepthAnything3
-        self._da3_model = DepthAnything3.from_pretrained(self.DA3_NAME).to(self.device)
+        # MPS has autocast dtype compatibility issues with DA3's scaled_dot_product_attention
+        # and upsample_bicubic2d is not implemented on MPS. Fallback to CPU for DA3.
+        device = self.device
+        if device == "mps":
+            print("  [DA3] MPS device has compatibility issues; using CPU for depth estimation.")
+            device = "cpu"
+        self._da3_model = DepthAnything3.from_pretrained(self.DA3_NAME).to(device)
         self._da3_model.eval()
 
     def _load_da2(self):
@@ -372,6 +387,32 @@ class RGBDCameraApp:
                 with self._frame_lock:
                     self._latest_frame = frame
 
+    def _stdin_thread(self):
+        """Read new prompts and seed updates from stdin while running."""
+        while self.running:
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    time.sleep(0.1)
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("seed:"):
+                    seed_str = line[5:].strip()
+                    try:
+                        new_seed = int(seed_str)
+                        self.pipeline.set_seed(new_seed)
+                        print(f"  Seed updated: {new_seed}")
+                    except ValueError:
+                        print(f"  Invalid seed value: {seed_str}")
+                else:
+                    self.pipeline.set_prompt(line)
+                    print(f"  Prompt updated: {line[:60]}")
+            except Exception as e:
+                if self.running:
+                    print(f"  Stdin read error: {e}")
+
     def _make_depth_preview(self, rgb_bgr, depth):
         """Render the depth map according to the selected preview mode."""
         if depth is None:
@@ -462,8 +503,10 @@ class RGBDCameraApp:
         self.running = True
         cam_t = threading.Thread(target=self._camera_thread, args=(cap,), daemon=True)
         inf_t = threading.Thread(target=self._inference_thread, daemon=True)
+        stdin_t = threading.Thread(target=self._stdin_thread, daemon=True)
         cam_t.start()
         inf_t.start()
+        stdin_t.start()
 
         win = f"StreamDiffusion-RGBD ({self.pipeline.model_name} {self.pipeline.render_size})"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -602,6 +645,7 @@ class RGBDCameraApp:
         self.running = False
         cam_t.join(timeout=2)
         inf_t.join(timeout=2)
+        stdin_t.join(timeout=1)
 
         total = time.perf_counter() - total_start
         with self._result_lock:
@@ -642,6 +686,8 @@ def main():
                         help="EMA smoothing (0=none, 0.9=heavy)")
     parser.add_argument("--feedback", type=float, default=0.1,
                         help="Latent feedback (0=none, 0.3=30%% prev frame)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for fixed noise (changes image texture)")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--coreml-dir", type=str, default=COREML_DIR)
     parser.add_argument("--depth-model", type=str, default="auto",
@@ -685,6 +731,7 @@ def main():
         prompts=prompts,
         latent_feedback=args.feedback,
         coreml_dir=args.coreml_dir,
+        seed=args.seed,
     )
 
     app = RGBDCameraApp(

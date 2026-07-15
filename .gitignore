@@ -9,6 +9,18 @@ build/
 
 # CoreML models (large files, not committed)
 coreml_models/
+python/coreml_models/
+
+# Downloaded LoRAs (large files, not committed)
+python/loras/
+
+# Model weights / large binaries
+*.onnx
+*.safetensors
+*.ckpt
+*.pth
+*.mlpackage
+models/
 
 # Downloaded LoRAs (large files, not committed)
 python/loras/
@@ -32,3 +44,9 @@ erl_crash.dump
 
 # Captures
 capture_*.png
+
+# Private docs with API keys
+DOWNLOAD_LORAS_PRIVATE.md
+private/
+*.private.md
+
