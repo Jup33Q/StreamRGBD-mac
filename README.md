@@ -40,10 +40,20 @@ python python/scripts/convert_models.py
 python python/camera.py --prompt "oil painting style, masterpiece"
 ```
 
-Or use the convenience launcher script (after setup):
+Or use the convenience launcher scripts (after setup):
 
 ```bash
+# RGBD + NDI output (color + depth channels)
 ./start_streamrgbd.sh
+
+# Camera → NDI forwarding (no AI processing)
+./start_camera_to_ndi.sh
+
+# GUI control panel for stream_rgbd
+./start_streamrgbd_gui.sh
+
+# NDI source scanner GUI
+./start_ndi_scanner.sh
 ```
 
 ## Project Layout
@@ -52,13 +62,20 @@ Or use the convenience launcher script (after setup):
 .
 ├── python/                       # Python StreamDiffusion + RGBD pipeline
 │   ├── camera.py                 # Basic img2img pipeline (cv2 window)
-│   ├── camera_rgbd.py            # RGBD pipeline with depth output
+│   ├── camera_rgbd.py            # RGBD pipeline with depth + NDI output
 │   ├── camera_ndi.py             # NDI input support
+│   ├── camera_to_ndi.py          # Basic camera → NDI forwarding (no AI)
 │   ├── streamdiffusion_api.py    # Flask HTTP API for remote control
+│   ├── ndi_scanner_gui.py        # GUI: scan available NDI sources
+│   ├── stream_rgbd_gui.py        # GUI: control panel for stream_rgbd
+│   ├── tk_style.py               # Window style module (light/dark theme)
 │   ├── requirements.txt
 │   └── setup.sh
 ├── coreml_models/               # Converted CoreML models (generated)
-├── start_streamrgbd.sh          # Convenience launcher script
+├── start_streamrgbd.sh          # Convenience launcher (RGBD + NDI out)
+├── start_streamrgbd_gui.sh      # GUI launcher for stream_rgbd
+├── start_camera_to_ndi.sh       # Launcher for camera → NDI forwarding
+├── start_ndi_scanner.sh         # Launcher for NDI source scanner GUI
 └── README.md
 ```
 
@@ -233,6 +250,69 @@ cp da3.mlpackage /path/to/StreamRGBD-mac/coreml_models/da3_small.mlpackage
 ```
 
 Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
+
+## NDI Output
+
+`camera_rgbd.py` now supports dual NDI output — sending the AI color image and the depth map as two separate NDI sources simultaneously.
+
+```bash
+# Default: color → "StreamDiffusion-RGBD-color", depth → "StreamDiffusion-RGBD-depth"
+./start_streamrgbd.sh
+
+# Custom NDI source name
+./start_streamrgbd.sh --ndi-output "MyProject"
+# Generates: "MyProject-color" and "MyProject-depth"
+```
+
+### Camera → NDI Forwarding (No AI)
+
+For basic camera capture without AI processing, use `camera_to_ndi.py`:
+
+```bash
+./start_camera_to_ndi.sh
+
+# Custom camera, resolution, and NDI name
+./start_camera_to_ndi.sh --camera 1 --ndi-output "MyCam" --width 1920 --height 1080
+
+# List available cameras
+./start_camera_to_ndi.sh --list-cameras
+
+# Headless mode (no preview window)
+./start_camera_to_ndi.sh --no-preview
+```
+
+## GUI Tools
+
+### NDI Source Scanner
+
+A GUI application to scan and list all available NDI sources on the local network.
+
+```bash
+./start_ndi_scanner.sh
+
+# Auto-refresh every 3 seconds
+./start_ndi_scanner.sh --auto-refresh 3
+```
+
+Features:
+- Scan for NDI sources (10-second timeout for thorough discovery)
+- Display source name, address, and URL
+- View detailed source information on selection
+- Auto-refresh mode
+
+### Stream RGBD Control Panel
+
+A GUI control panel for configuring and launching the Stream RGBD pipeline with visual parameter editing.
+
+```bash
+./start_streamrgbd_gui.sh
+```
+
+Features:
+- Visual parameter configuration (prompt, model, render size, depth backend, NDI output, etc.)
+- Start/Stop button control
+- Real-time log output panel
+- All `camera_rgbd.py` arguments accessible via GUI
 
 ## Architecture
 

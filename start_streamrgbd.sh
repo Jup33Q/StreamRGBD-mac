@@ -18,4 +18,5 @@ python python/camera_rgbd.py \
     --render-size 512 \
     --depth-backend pytorch \
     --depth-model da2-small \
+    --ndi-output "StreamDiffusion-RGBD" \
     "$@"

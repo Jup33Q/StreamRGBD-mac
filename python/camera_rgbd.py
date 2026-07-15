@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-StreamDiffusion for Mac — RGBD Output Pipeline
+StreamDiffusion for Mac — RGBD Output Pipeline with NDI Support
 
-Runs the CoreML img2img pipeline, then estimates depth on the AI output
-and concatenates RGB + depth into a 4-channel RGBD frame.
+Runs the CoreML img2img pipeline, estimates depth on the AI output,
+and produces dual NDI output streams: AI color (-color suffix) and depth (-depth suffix).
 
 Three depth backends are supported (in order of preference on macOS):
 
@@ -17,8 +17,13 @@ The RGBD frame is exposed as H x W x 4 uint8 (RGB in first 3 channels,
 depth as the 4th / alpha channel).  The preview window shows the AI RGB
 output next to a color-mapped depth visualization.
 
+NDI Output:
+    --ndi-output NAME  creates two NDI sources: "NAME-color" and "NAME-depth"
+    Requires ndi-python (pip install ndi-python)
+
 Usage:
     python camera_rgbd.py --prompt "oil painting style, masterpiece"
+    python camera_rgbd.py --ndi-output "StreamDiffusion-RGBD"
     python camera_rgbd.py --depth-backend coreml --depth-coreml-path ./da3_small.mlpackage
     python camera_rgbd.py --depth-model da2-small --prompt "watercolor"
 
@@ -286,12 +291,12 @@ class RGBDPipeline(Pipeline):
 
 
 class RGBDCameraApp:
-    """3-thread camera application that also produces RGBD frames."""
+    """3-thread camera application that also produces RGBD frames, with optional NDI output."""
 
     PREVIEW_MODES = ["mono", "alpha", "alpha_color", "overlay"]
 
     def __init__(self, pipeline, camera_id=0, blend_ratio=0.0, ema_alpha=0.85,
-                 depth_preview_mode="mono"):
+                 depth_preview_mode="mono", ndi_output_name=None):
         self.pipeline = pipeline
         self.camera_id = camera_id
         self.blend_ratio = blend_ratio
@@ -300,6 +305,10 @@ class RGBDCameraApp:
             raise ValueError(f"Unknown preview mode: {depth_preview_mode}")
         self.depth_preview_mode = depth_preview_mode
         self.running = False
+        self.ndi_output_name = ndi_output_name
+        self._color_sender = None
+        self._depth_sender = None
+        self._ndi_available = False
 
         self._frame_lock = threading.Lock()
         self._latest_frame = None
@@ -310,6 +319,51 @@ class RGBDCameraApp:
         self._ai_update_count = 0
         self._ai_fps = 0.0
         self._ema_result = None
+
+    def _check_ndi(self):
+        try:
+            import NDIlib
+            return True
+        except Exception:
+            return False
+
+    def _create_ndi_sender(self, name):
+        import NDIlib
+        send_settings = NDIlib.SendCreate(p_ndi_name=name)
+        sender = NDIlib.send_create(send_settings)
+        if not sender:
+            print(f"WARNING: Failed to create NDI sender: '{name}'")
+            return None
+        print(f"NDI sender created: '{name}'")
+        return sender
+
+    @staticmethod
+    def _bgr_to_ndi(frame_bgr):
+        import NDIlib
+        h, w = frame_bgr.shape[:2]
+        bgrx = np.zeros((h, w, 4), dtype=np.uint8)
+        bgrx[:, :, :3] = frame_bgr
+        bgrx[:, :, 3] = 255
+
+        vf = NDIlib.VideoFrameV2()
+        vf.xres = w
+        vf.yres = h
+        vf.FourCC = NDIlib.FourCCVideoType.FOURCC_VIDEO_TYPE_BGRX
+        vf.line_stride_in_bytes = w * 4
+        vf.frame_rate_N = 30
+        vf.frame_rate_D = 1
+        vf.data = bgrx
+        return vf
+
+    def _send_ndi(self, sender, frame_bgr):
+        if not sender:
+            return
+        try:
+            ndi_frame = self._bgr_to_ndi(frame_bgr)
+            import NDIlib
+            NDIlib.send_send_video_v2(sender, ndi_frame)
+        except Exception as e:
+            print(f"NDI send error: {e}")
 
     def _camera_thread(self, cap):
         while self.running:
@@ -395,6 +449,13 @@ class RGBDCameraApp:
         print(f"Blend: {self.blend_ratio:.1f} (0=AI only, 1=camera only)")
         print(f"EMA: {self.ema_alpha:.2f}")
         print(f"Depth preview: {self.depth_preview_mode} (mono/alpha/alpha_color/overlay)")
+        if self.ndi_output_name:
+            self._ndi_available = self._check_ndi()
+            if self._ndi_available:
+                self._color_sender = self._create_ndi_sender(f"{self.ndi_output_name}-color")
+                self._depth_sender = self._create_ndi_sender(f"{self.ndi_output_name}-depth")
+            else:
+                print("WARNING: NDIlib not installed; NDI output disabled.")
         print("Controls: q=quit  s=save  n/p=prompt  +/-=blend  e/d=EMA  m=depth mode")
         print("")
 
@@ -463,6 +524,13 @@ class RGBDCameraApp:
                 depth_color = np.zeros_like(cam_display)
 
             display = np.hstack([result_display, depth_color])
+
+            # --- NDI Output ---
+            if self._color_sender:
+                self._send_ndi(self._color_sender, result_display)
+            if self._depth_sender and depth is not None:
+                depth_bgr = cv2.cvtColor(depth, cv2.COLOR_GRAY2BGR)
+                self._send_ndi(self._depth_sender, depth_bgr)
 
             display_count += 1
             dt = time.perf_counter() - dt0
@@ -544,6 +612,19 @@ class RGBDCameraApp:
         cap.release()
         cv2.destroyAllWindows()
 
+        if self._color_sender:
+            try:
+                import NDIlib
+                NDIlib.send_destroy(self._color_sender)
+            except Exception:
+                pass
+        if self._depth_sender:
+            try:
+                import NDIlib
+                NDIlib.send_destroy(self._depth_sender)
+            except Exception:
+                pass
+
 
 def main():
     parser = argparse.ArgumentParser(description="StreamDiffusion for Mac — RGBD Output")
@@ -580,6 +661,9 @@ def main():
                               "alpha=grayscale RGB composited with depth as alpha, "
                               "alpha_color=color RGB composited with depth as alpha, "
                               "overlay=50%% blend of RGB and grayscale depth"))
+    parser.add_argument("--ndi-output", type=str, default=None,
+                        help="NDI output source name (e.g. 'StreamDiffusion-RGBD'). "
+                             "Requires NDI SDK / ndi-python installed.")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -609,6 +693,7 @@ def main():
         blend_ratio=args.blend,
         ema_alpha=args.ema,
         depth_preview_mode=args.depth_preview_mode,
+        ndi_output_name=args.ndi_output,
     )
     app.run()
 
