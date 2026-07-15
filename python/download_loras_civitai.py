@@ -210,6 +210,58 @@ LORA_REGISTRY = {
         "trigger_words": "instant photo, polaroid",
         "file_size_mb": 72.1,
     },
+    # ── 建筑 LoRA ──
+    "civitai-arch-sketch-markers": {
+        "display_name": "Civitai Arch Sketch Markers 建筑马克笔草图",
+        "filename": None,
+        "description": "马克笔风格建筑草图，适合概念设计和手绘效果图（Civitai 来源）。",
+        "weight_min": 0.5,
+        "weight_max": 1.0,
+        "weight_default": 0.75,
+        "trigger_words": "marker sketch, architectural sketch",
+        "file_size_mb": 9.1
+    },
+    "civitai-arch-sketch-style": {
+        "display_name": "Civitai Arch Sketch Style 建筑线稿风格",
+        "filename": None,
+        "description": "建筑线稿和手绘风格，清晰的线条和透视表现（Civitai 来源）。",
+        "weight_min": 0.5,
+        "weight_max": 1.0,
+        "weight_default": 0.75,
+        "trigger_words": "archisketch, architectural sketch",
+        "file_size_mb": 18.1
+    },
+    "civitai-arch-watercolor": {
+        "display_name": "Civitai Arch Watercolor 建筑水彩风格",
+        "filename": None,
+        "description": "建筑水彩画风格，柔和的色彩和透明感（Civitai 来源）。",
+        "weight_min": 0.5,
+        "weight_max": 1.0,
+        "weight_default": 0.75,
+        "trigger_words": "watercolor, architecture watercolor",
+        "file_size_mb": 36.1
+    },
+    "civitai-arch-concepts": {
+        "display_name": "Civitai Arch Concepts 建筑场景单体",
+        "filename": None,
+        "description": "建筑场景单体概念设计，适合环境设计和场景搭建（Civitai 来源）。",
+        "weight_min": 0.5,
+        "weight_max": 1.0,
+        "weight_default": 0.75,
+        "trigger_words": "architectural concept, scene design",
+        "file_size_mb": 36.1
+    },
+    "civitai-interior-design": {
+        "display_name": "Civitai Interior Design 室内装潢设计",
+        "filename": None,
+        "description": "室内装潢设计风格，适合家居和室内空间渲染（Civitai 来源）。",
+        "weight_min": 0.5,
+        "weight_max": 1.0,
+        "weight_default": 0.75,
+        "trigger_words": "interior design, room design",
+        "file_size_mb": 72.1
+    },
+
 }
 
 
