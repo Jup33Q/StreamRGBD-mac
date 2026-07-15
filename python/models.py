@@ -222,6 +222,19 @@ class LoraModel(BaseModel):
         null=True,
         verbose_name="触发词（逗号分隔）",
     )
+    # ── 分类字段 ──
+    category = CharField(
+        max_length=16,
+        default="subject",
+        verbose_name="一级分类",
+        help_text="style / subject / quality",
+    )
+    sub_type = CharField(
+        max_length=32,
+        null=True,
+        verbose_name="二级分类",
+        help_text="style: painting/animation/photo/other; subject: architecture/character/clothing/effect; quality: detail/adjust/enhance/other",
+    )
     file_size_mb = FloatField(
         null=True,
         verbose_name="文件大小（MB）",
@@ -241,6 +254,282 @@ class LoraModel(BaseModel):
 
     def __str__(self):
         return f"<LoraModel {self.name} (weight {self.weight_min}~{self.weight_max}, default={self.weight_default})>"
+
+
+# ═════════════════════════════════════════════════════════════
+# StyleLoraModel：风格类 LoRA 表（按一级分类拆分）
+# ═════════════════════════════════════════════════════════════
+class StyleLoraModel(BaseModel):
+    """
+    风格类 LoRA 表，存储风格类低秩适应模型
+    二级分类：painting（绘画）、animation（动漫）、photo（摄影）、other（其他）
+    """
+    id = AutoField(primary_key=True)
+    name = CharField(
+        max_length=128,
+        unique=True,
+        index=True,
+        verbose_name="模型标识名",
+    )
+    display_name = CharField(
+        max_length=256,
+        verbose_name="显示名称",
+    )
+    file_path = CharField(
+        max_length=512,
+        verbose_name="模型文件路径",
+    )
+    repo_id = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 仓库 ID",
+    )
+    filename = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 文件名",
+    )
+    civitai_version_id = IntegerField(
+        null=True,
+        verbose_name="Civitai 版本 ID",
+    )
+    source_type = CharField(
+        max_length=16,
+        default="huggingface",
+        verbose_name="来源类型",
+        help_text="huggingface 或 civitai",
+    )
+    description = TextField(null=True, verbose_name="模型描述")
+    parameters = TextField(
+        null=True,
+        verbose_name="额外参数（JSON 字符串）",
+    )
+    weight_min = FloatField(
+        default=-2.0,
+        verbose_name="最小权重值",
+    )
+    weight_max = FloatField(
+        default=2.0,
+        verbose_name="最大权重值",
+    )
+    weight_default = FloatField(
+        default=0.8,
+        verbose_name="默认权重值",
+    )
+    trigger_words = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="触发词（逗号分隔）",
+    )
+    # ── 风格二级分类 ──
+    style_subtype = CharField(
+        max_length=32,
+        default="other",
+        verbose_name="风格二级分类",
+        help_text="painting / animation / photo / other",
+    )
+    file_size_mb = FloatField(
+        null=True,
+        verbose_name="文件大小（MB）",
+    )
+    is_default = BooleanField(
+        default=False,
+        verbose_name="是否为默认模型",
+    )
+    is_active = BooleanField(
+        default=True,
+        verbose_name="是否启用",
+    )
+
+    class Meta:
+        table_name = "style_lora"
+
+    def __str__(self):
+        return f"<StyleLoraModel {self.name} (subtype={self.style_subtype}, weight {self.weight_min}~{self.weight_max})>"
+
+
+# ═════════════════════════════════════════════════════════════
+# SubjectLoraModel：主体类 LoRA 表（按一级分类拆分）
+# ═════════════════════════════════════════════════════════════
+class SubjectLoraModel(BaseModel):
+    """
+    主体类 LoRA 表，存储主体类低秩适应模型
+    二级分类：architecture（建筑）、character（角色）、clothing（服装）、effect（特效）
+    """
+    id = AutoField(primary_key=True)
+    name = CharField(
+        max_length=128,
+        unique=True,
+        index=True,
+        verbose_name="模型标识名",
+    )
+    display_name = CharField(
+        max_length=256,
+        verbose_name="显示名称",
+    )
+    file_path = CharField(
+        max_length=512,
+        verbose_name="模型文件路径",
+    )
+    repo_id = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 仓库 ID",
+    )
+    filename = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 文件名",
+    )
+    civitai_version_id = IntegerField(
+        null=True,
+        verbose_name="Civitai 版本 ID",
+    )
+    source_type = CharField(
+        max_length=16,
+        default="huggingface",
+        verbose_name="来源类型",
+        help_text="huggingface 或 civitai",
+    )
+    description = TextField(null=True, verbose_name="模型描述")
+    parameters = TextField(
+        null=True,
+        verbose_name="额外参数（JSON 字符串）",
+    )
+    weight_min = FloatField(
+        default=-2.0,
+        verbose_name="最小权重值",
+    )
+    weight_max = FloatField(
+        default=2.0,
+        verbose_name="最大权重值",
+    )
+    weight_default = FloatField(
+        default=0.8,
+        verbose_name="默认权重值",
+    )
+    trigger_words = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="触发词（逗号分隔）",
+    )
+    # ── 主体二级分类 ──
+    subject_subtype = CharField(
+        max_length=32,
+        default="other",
+        verbose_name="主体二级分类",
+        help_text="architecture / character / clothing / effect / other",
+    )
+    file_size_mb = FloatField(
+        null=True,
+        verbose_name="文件大小（MB）",
+    )
+    is_default = BooleanField(
+        default=False,
+        verbose_name="是否为默认模型",
+    )
+    is_active = BooleanField(
+        default=True,
+        verbose_name="是否启用",
+    )
+
+    class Meta:
+        table_name = "subject_lora"
+
+    def __str__(self):
+        return f"<SubjectLoraModel {self.name} (subtype={self.subject_subtype}, weight {self.weight_min}~{self.weight_max})>"
+
+
+# ═════════════════════════════════════════════════════════════
+# QualityLoraModel：质量类 LoRA 表（按一级分类拆分）
+# ═════════════════════════════════════════════════════════════
+class QualityLoraModel(BaseModel):
+    """
+    质量类 LoRA 表，存储质量类低秩适应模型
+    二级分类：detail（细节增强）、adjust（调整）、enhance（增强）、other（其他）
+    """
+    id = AutoField(primary_key=True)
+    name = CharField(
+        max_length=128,
+        unique=True,
+        index=True,
+        verbose_name="模型标识名",
+    )
+    display_name = CharField(
+        max_length=256,
+        verbose_name="显示名称",
+    )
+    file_path = CharField(
+        max_length=512,
+        verbose_name="模型文件路径",
+    )
+    repo_id = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 仓库 ID",
+    )
+    filename = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="HuggingFace 文件名",
+    )
+    civitai_version_id = IntegerField(
+        null=True,
+        verbose_name="Civitai 版本 ID",
+    )
+    source_type = CharField(
+        max_length=16,
+        default="huggingface",
+        verbose_name="来源类型",
+        help_text="huggingface 或 civitai",
+    )
+    description = TextField(null=True, verbose_name="模型描述")
+    parameters = TextField(
+        null=True,
+        verbose_name="额外参数（JSON 字符串）",
+    )
+    weight_min = FloatField(
+        default=-2.0,
+        verbose_name="最小权重值",
+    )
+    weight_max = FloatField(
+        default=2.0,
+        verbose_name="最大权重值",
+    )
+    weight_default = FloatField(
+        default=0.8,
+        verbose_name="默认权重值",
+    )
+    trigger_words = CharField(
+        max_length=256,
+        null=True,
+        verbose_name="触发词（逗号分隔）",
+    )
+    # ── 质量二级分类 ──
+    quality_subtype = CharField(
+        max_length=32,
+        default="other",
+        verbose_name="质量二级分类",
+        help_text="detail / adjust / enhance / other",
+    )
+    file_size_mb = FloatField(
+        null=True,
+        verbose_name="文件大小（MB）",
+    )
+    is_default = BooleanField(
+        default=False,
+        verbose_name="是否为默认模型",
+    )
+    is_active = BooleanField(
+        default=True,
+        verbose_name="是否启用",
+    )
+
+    class Meta:
+        table_name = "quality_lora"
+
+    def __str__(self):
+        return f"<QualityLoraModel {self.name} (subtype={self.quality_subtype}, weight {self.weight_min}~{self.weight_max})>"
 
 
 # ═════════════════════════════════════════════════════════════
@@ -565,6 +854,106 @@ def get_random_prompt(category_name: str) -> str | None:
     prompt.save(only=[table_class.usage_count])
 
     return prompt.prompt_text
+
+
+# ─────────────────────────────────────────────────────────────
+# 便捷函数：LoRA 分类表映射与查询
+# ─────────────────────────────────────────────────────────────
+
+# 一级分类名称到表类的映射字典
+_LORA_CATEGORY_TABLE_MAP = {
+    "style": StyleLoraModel,
+    "subject": SubjectLoraModel,
+    "quality": QualityLoraModel,
+}
+
+
+def get_lora_table(category_name: str):
+    """
+    根据一级分类名称返回对应的 LoRA 表类。
+
+    Args:
+        category_name: 一级分类标识名，如 "style"、"subject"、"quality"
+
+    Returns:
+        对应的 peewee Model 类（StyleLoraModel / SubjectLoraModel / QualityLoraModel）
+
+    Raises:
+        ValueError: 如果 category_name 不是有效的分类名
+    """
+    category_name = category_name.lower().strip()
+    table_class = _LORA_CATEGORY_TABLE_MAP.get(category_name)
+    if table_class is None:
+        raise ValueError(
+            f"未知的 LoRA 一级分类: {category_name!r}. "
+            f"支持的分类: {', '.join(_LORA_CATEGORY_TABLE_MAP.keys())}"
+        )
+    return table_class
+
+
+def get_lora_by_category(category_name: str, subtype: str = None, active_only: bool = True):
+    """
+    根据一级分类（及可选的二级分类）获取 LoRA 列表。
+
+    Args:
+        category_name: 一级分类，如 "style"、"subject"、"quality"
+        subtype: 可选的二级分类过滤，如 "clothing"、"architecture" 等
+        active_only: 是否只返回 is_active=True 的条目
+
+    Returns:
+        peewee ModelSelect 查询对象
+    """
+    table_class = get_lora_table(category_name)
+    query = table_class.select()
+    if active_only:
+        query = query.where(table_class.is_active == True)
+    if subtype:
+        # 根据分类使用正确的字段名过滤
+        subtype_field = f"{category_name}_subtype"
+        query = query.where(getattr(table_class, subtype_field) == subtype)
+    return query
+
+
+def get_all_loras(active_only: bool = True):
+    """
+    从所有 3 个分类表中获取全部 LoRA 列表，按统一格式返回。
+
+    Args:
+        active_only: 是否只返回 is_active=True 的条目
+
+    Returns:
+        list[dict]: 每个 LoRA 包含统一的字段（name, display_name, category, subtype, 等）
+    """
+    results = []
+    for category_name, table_class in _LORA_CATEGORY_TABLE_MAP.items():
+        query = table_class.select()
+        if active_only:
+            query = query.where(table_class.is_active == True)
+        for lora in query:
+            # 获取二级分类字段名
+            subtype_field = f"{category_name}_subtype"
+            subtype = getattr(lora, subtype_field, "other")
+            results.append({
+                "id": lora.id,
+                "name": lora.name,
+                "display_name": lora.display_name,
+                "category": category_name,
+                "sub_type": subtype,
+                "file_path": lora.file_path,
+                "repo_id": lora.repo_id,
+                "filename": lora.filename,
+                "civitai_version_id": lora.civitai_version_id,
+                "source_type": lora.source_type,
+                "description": lora.description,
+                "weight_min": lora.weight_min,
+                "weight_max": lora.weight_max,
+                "weight_default": lora.weight_default,
+                "trigger_words": lora.trigger_words,
+                "file_size_mb": lora.file_size_mb,
+                "is_default": lora.is_default,
+                "is_active": lora.is_active,
+            })
+    return results
 
 
 # ─────────────────────────────────────────────────────────────

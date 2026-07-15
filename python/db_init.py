@@ -19,7 +19,10 @@ from models import (
     database,               # SqliteDatabase 实例
     StreamDiffusionModel,   # SD 模型表
     DepthModel,             # 深度模型表
-    LoraModel,              # LoRA 模型表
+    LoraModel,              # LoRA 模型表（保留向后兼容）
+    StyleLoraModel,         # 风格类 LoRA 表
+    SubjectLoraModel,       # 主体类 LoRA 表
+    QualityLoraModel,       # 质量类 LoRA 表
     PromptCategory,         # 提示词类别表
     StylePrompt,            # 风格提示词表
     SubjectPrompt,          # 主题提示词表
@@ -160,6 +163,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 26.0,
         "is_default": False,
+        "category": "style",
+        "sub_type": "animation",
         "is_active": True
     },
     {
@@ -177,6 +182,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 3.1,
         "is_default": False,
+        "category": "style",
+        "sub_type": "painting",
         "is_active": True
     },
     # ── 角色 / 服装 LoRA ──
@@ -195,6 +202,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 2460.5,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "character",
         "is_active": True
     },
     {
@@ -212,6 +221,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -229,6 +240,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -246,6 +259,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -263,6 +278,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -280,6 +297,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -297,6 +316,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -314,6 +335,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -331,6 +354,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -348,6 +373,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -365,6 +392,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -382,6 +411,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -399,6 +430,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -416,6 +449,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "huggingface",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     # ── Civitai 来源 LoRA ──
@@ -435,6 +470,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.0,
         "is_default": False,
+        "category": "quality",
+        "sub_type": "detail",
         "is_active": True
     },
     {
@@ -453,6 +490,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 144.1,
         "is_default": False,
+        "category": "style",
+        "sub_type": "painting",
         "is_active": True
     },
     {
@@ -471,6 +510,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "style",
+        "sub_type": "painting",
         "is_active": True
     },
     {
@@ -489,6 +530,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.0,
         "is_default": False,
+        "category": "quality",
+        "sub_type": "detail",
         "is_active": True
     },
     {
@@ -507,6 +550,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 144.0,
         "is_default": False,
+        "category": "style",
+        "sub_type": "animation",
         "is_active": True
     },
     {
@@ -525,6 +570,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.0,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -543,6 +590,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 4.6,
         "is_default": False,
+        "category": "quality",
+        "sub_type": "adjust",
         "is_active": True
     },
     {
@@ -561,6 +610,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "clothing",
         "is_active": True
     },
     {
@@ -579,6 +630,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 72.1,
         "is_default": False,
+        "category": "style",
+        "sub_type": "photo",
         "is_active": True
     },
     # ── 建筑 LoRA ──
@@ -598,6 +651,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 9.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "architecture",
         "is_active": True
     },
     {
@@ -616,6 +671,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 18.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "architecture",
         "is_active": True
     },
     {
@@ -634,6 +691,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "architecture",
         "is_active": True
     },
     {
@@ -652,6 +711,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 36.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "architecture",
         "is_active": True
     },
     {
@@ -670,6 +731,8 @@ LORA_MODEL_SEEDS = [
         "source_type": "civitai",
         "file_size_mb": 72.1,
         "is_default": False,
+        "category": "subject",
+        "sub_type": "architecture",
         "is_active": True
     },
 ]
@@ -979,6 +1042,9 @@ def create_tables():
         StreamDiffusionModel,
         DepthModel,
         LoraModel,
+        StyleLoraModel,
+        SubjectLoraModel,
+        QualityLoraModel,
         PromptCategory,
         StylePrompt,
         SubjectPrompt,
@@ -1021,6 +1087,59 @@ def seed_depth_models():
 
 
 def seed_lora_models():
+    """
+    插入 LoRA 种子数据。
+    同时插入到：
+      1. LoraModel（统一表，向后兼容）
+      2. 对应的一级分类表（StyleLoraModel / SubjectLoraModel / QualityLoraModel）
+    """
+    count_lora = 0
+    count_style = 0
+    count_subject = 0
+    count_quality = 0
+
+    for data in LORA_MODEL_SEEDS:
+        # ── 插入统一表 LoraModel ──
+        _, created = LoraModel.get_or_create(
+            name=data["name"],
+            defaults=data,
+        )
+        if created:
+            count_lora += 1
+
+        # ── 根据 category 插入到对应分类表 ──
+        category = data.get("category", "subject")
+        category_data = {k: v for k, v in data.items() if k not in ("category", "sub_type")}
+
+        if category == "style":
+            category_data["style_subtype"] = data.get("sub_type", "other")
+            _, created = StyleLoraModel.get_or_create(
+                name=data["name"],
+                defaults=category_data,
+            )
+            if created:
+                count_style += 1
+        elif category == "subject":
+            category_data["subject_subtype"] = data.get("sub_type", "other")
+            _, created = SubjectLoraModel.get_or_create(
+                name=data["name"],
+                defaults=category_data,
+            )
+            if created:
+                count_subject += 1
+        elif category == "quality":
+            category_data["quality_subtype"] = data.get("sub_type", "other")
+            _, created = QualityLoraModel.get_or_create(
+                name=data["name"],
+                defaults=category_data,
+            )
+            if created:
+                count_quality += 1
+
+    print(f"[INFO] LoraModel: 插入 {count_lora} 条新记录，总计 {LoraModel.select().count()} 条")
+    print(f"[INFO] StyleLoraModel: 插入 {count_style} 条新记录，总计 {StyleLoraModel.select().count()} 条")
+    print(f"[INFO] SubjectLoraModel: 插入 {count_subject} 条新记录，总计 {SubjectLoraModel.select().count()} 条")
+    print(f"[INFO] QualityLoraModel: 插入 {count_quality} 条新记录，总计 {QualityLoraModel.select().count()} 条")
     """插入 LoraModel 种子数据"""
     count = 0
     for data in LORA_MODEL_SEEDS:

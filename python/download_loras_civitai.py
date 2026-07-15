@@ -111,6 +111,8 @@ LORA_REGISTRY = {
         "weight_max": 2.0,
         "weight_default": 0.5,
         "trigger_words": "",
+        "category": "quality",
+        "sub_type": "detail",
         "file_size_mb": 36.0,
     },
     "civitai-moxin-ink": {
@@ -123,6 +125,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.8,
         "trigger_words": "shuimobysim, wuchangshuo, bonian, zhenbanqiao, badashanren",
+        "category": "style",
+        "sub_type": "painting",
         "file_size_mb": 144.1,
     },
     "civitai-anime-lineart": {
@@ -135,6 +139,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.8,
         "trigger_words": "lineart, monochrome",
+        "category": "style",
+        "sub_type": "painting",
         "file_size_mb": 18.1,
     },
     "civitai-more-details": {
@@ -147,6 +153,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.6,
         "trigger_words": "",
+        "category": "quality",
+        "sub_type": "detail",
         "file_size_mb": 36.0,
     },
     "civitai-studio-ghibli": {
@@ -159,6 +167,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "ghibli, studio ghibli",
+        "category": "style",
+        "sub_type": "animation",
         "file_size_mb": 144.0,
     },
     # ── 角色 / 服装 LoRA ──
@@ -172,6 +182,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "hanfu, chinese dress",
+        "category": "subject",
+        "sub_type": "clothing",
         "file_size_mb": 36.0,
     },
     "civitai-clothing-adjuster": {
@@ -184,6 +196,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.5,
         "trigger_words": "",
+        "category": "quality",
+        "sub_type": "adjust",
         "file_size_mb": 4.6,
     },
     "civitai-moesode": {
@@ -196,6 +210,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.7,
         "trigger_words": "moesode, sleeves past wrists",
+        "category": "subject",
+        "sub_type": "clothing",
         "file_size_mb": 36.1,
     },
     "civitai-instant-photo": {
@@ -208,6 +224,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "instant photo, polaroid",
+        "category": "style",
+        "sub_type": "photo",
         "file_size_mb": 72.1,
     },
     # ── 建筑 LoRA ──
@@ -219,6 +237,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "marker sketch, architectural sketch",
+        "category": "subject",
+        "sub_type": "architecture",
         "file_size_mb": 9.1
     },
     "civitai-arch-sketch-style": {
@@ -229,6 +249,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "archisketch, architectural sketch",
+        "category": "subject",
+        "sub_type": "architecture",
         "file_size_mb": 18.1
     },
     "civitai-arch-watercolor": {
@@ -239,6 +261,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "watercolor, architecture watercolor",
+        "category": "subject",
+        "sub_type": "architecture",
         "file_size_mb": 36.1
     },
     "civitai-arch-concepts": {
@@ -249,6 +273,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "architectural concept, scene design",
+        "category": "subject",
+        "sub_type": "architecture",
         "file_size_mb": 36.1
     },
     "civitai-interior-design": {
@@ -259,6 +285,8 @@ LORA_REGISTRY = {
         "weight_max": 1.0,
         "weight_default": 0.75,
         "trigger_words": "interior design, room design",
+        "category": "subject",
+        "sub_type": "architecture",
         "file_size_mb": 72.1
     },
 
@@ -273,29 +301,42 @@ def get_loras_dir():
     return loras_dir
 
 
-def _update_db_file_size(name: str, size_mb: float):
-    """更新数据库中 LoRA 的 file_size_mb 字段（如果数据库可用）。"""
+def _update_db_file_size(name: str, size_mb: float, category: str = None):
+    """更新数据库中 LoRA 的 file_size_mb 字段（统一表 + 分类表）。"""
     try:
         current_dir = Path(__file__).parent.resolve()
         if str(current_dir) not in sys.path:
             sys.path.insert(0, str(current_dir))
-        from models import LoraModel
+        from models import LoraModel, StyleLoraModel, SubjectLoraModel, QualityLoraModel
+
+        # 更新统一表
         query = LoraModel.update(file_size_mb=round(size_mb, 2)).where(LoraModel.name == name)
         query.execute()
+
+        # 更新分类表
+        if category == "style":
+            query = StyleLoraModel.update(file_size_mb=round(size_mb, 2)).where(StyleLoraModel.name == name)
+            query.execute()
+        elif category == "subject":
+            query = SubjectLoraModel.update(file_size_mb=round(size_mb, 2)).where(SubjectLoraModel.name == name)
+            query.execute()
+        elif category == "quality":
+            query = QualityLoraModel.update(file_size_mb=round(size_mb, 2)).where(QualityLoraModel.name == name)
+            query.execute()
     except Exception:
         # DB 可能不存在或模型名不匹配，静默忽略
         pass
 
 
 def download_lora(name: str, version_id: int, filename: str, loras_dir: Path,
-                  force: bool = False, file_size_mb: float = None):
+                  force: bool = False, file_size_mb: float = None, category: str = None):
     """Download a single LoRA from Civitai."""
     output_path = loras_dir / f"{name}.safetensors"
 
     if output_path.exists() and not force:
         actual_size_mb = output_path.stat().st_size / (1024 * 1024)
         print(f"  [SKIP] {name}: already exists at {output_path} ({actual_size_mb:.1f}MB)")
-        _update_db_file_size(name, actual_size_mb)
+        _update_db_file_size(name, actual_size_mb, category)
         return output_path
 
     # 100MB 跳过检查
@@ -345,7 +386,7 @@ def download_lora(name: str, version_id: int, filename: str, loras_dir: Path,
             else:
                 actual_size_mb = output_path.stat().st_size / (1024 * 1024)
                 print(f"  [OK] {name} -> {output_path} ({actual_size_mb:.1f}MB)")
-                _update_db_file_size(name, actual_size_mb)
+                _update_db_file_size(name, actual_size_mb, category)
         return output_path
 
     except Exception as e:
@@ -357,6 +398,48 @@ def download_lora(name: str, version_id: int, filename: str, loras_dir: Path,
 
 
 def list_available():
+    """Print all available LoRAs in registry, grouped by category."""
+    print("=" * 70)
+    print("Available SD 1.5 LoRAs from Civitai")
+    print("=" * 70)
+
+    # Group by category then sub_type
+    groups = {"style": {}, "subject": {}, "quality": {}}
+    for name, info in LORA_REGISTRY.items():
+        cat = info.get("category", "subject")
+        sub = info.get("sub_type", "other")
+        if cat not in groups:
+            groups[cat] = {}
+        if sub not in groups[cat]:
+            groups[cat][sub] = []
+        groups[cat][sub].append((name, info))
+
+    total_count = 0
+    for cat in ("style", "subject", "quality"):
+        subs = groups.get(cat, {})
+        if not subs:
+            continue
+        print(f"\n--- {cat.upper()} LoRAs ---")
+        cat_count = 0
+        for sub in sorted(subs.keys()):
+            items = subs[sub]
+            print(f"\n  [{sub}]")
+            for name, info in items:
+                cat_count += 1
+                total_count += 1
+                size_str = f"{info.get('file_size_mb', '?')}MB"
+                dl_status = "✓" if info.get("version_id") else "⚠ placeholder"
+                print(f"    {dl_status} {name}")
+                print(f"       Display:  {info['display_name']}")
+                print(f"       Size:     {size_str}")
+                print(f"       Weight:   {info['weight_min']} ~ {info['weight_max']} (default {info['weight_default']})")
+                if info.get('trigger_words'):
+                    print(f"       Triggers: {info['trigger_words']}")
+        print(f"\n  ({cat_count} {cat} LoRAs)")
+
+    print("\n" + "=" * 70)
+    print(f"Total: {total_count} LoRAs")
+    print(f"Max download size: {MAX_DOWNLOAD_MB}MB (larger models will be skipped)")
     """Print all available LoRAs in registry."""
     print("=" * 70)
     print("Available SD 1.5 LoRAs from Civitai")
@@ -383,7 +466,7 @@ def list_available():
             print(f"  Weight:      {info['weight_min']} ~ {info['weight_max']} (default {info['weight_default']})")
             print(f"  Triggers:    {info['trigger_words'] or '(none)'}")
             print(f"  Size:        {size_str}")
-            print(f"  Civitai:     https://civitai.com/models/{info['model_id']}")
+            print(f"  Civitai:     https://civitai.com/models/{info.get('model_id', 'N/A')}")
 
     print("\n--- Character / Clothing LoRAs ---")
     for name, info in LORA_REGISTRY.items():
@@ -397,7 +480,7 @@ def list_available():
             print(f"  Weight:      {info['weight_min']} ~ {info['weight_max']} (default {info['weight_default']})")
             print(f"  Triggers:    {info['trigger_words'] or '(none)'}")
             print(f"  Size:        {size_str}")
-            print(f"  Civitai:     https://civitai.com/models/{info['model_id']}")
+            print(f"  Civitai:     https://civitai.com/models/{info.get('model_id', 'N/A')}")
 
     print("\n" + "=" * 70)
     print(f"Total: {len(LORA_REGISTRY)} LoRAs ({style_count} style + {char_count} character/clothing)")
@@ -414,8 +497,13 @@ def download_all(loras_dir: Path, force: bool = False):
     skipped = 0
     failed = 0
     for name, info in LORA_REGISTRY.items():
+        if info.get("version_id") is None or info.get("filename") is None:
+            print(f"  [SKIP] {name}: missing version_id or filename (placeholder entry)")
+            skipped += 1
+            print()
+            continue
         result = download_lora(name, info["version_id"], info["filename"], loras_dir,
-                               force, info.get("file_size_mb"))
+                               force, info.get("file_size_mb"), info.get("category"))
         if result:
             success += 1
         elif info.get("file_size_mb", 0) > MAX_DOWNLOAD_MB:
@@ -527,8 +615,13 @@ def main():
             print(f"Available: {', '.join(LORA_REGISTRY.keys())}")
             return
         info = LORA_REGISTRY[args.name]
+        if info.get("version_id") is None or info.get("filename") is None:
+            print(f"ERROR: '{args.name}' is a placeholder entry with no Civitai download info.")
+            print("Please find the actual model_id and version_id on Civitai, then use:")
+            print(f"  python download_loras_civitai.py --download <model_id> <version_id> --output-name {args.name}")
+            return
         download_lora(args.name, info["version_id"], info["filename"], loras_dir,
-                      force=args.force, file_size_mb=info.get("file_size_mb"))
+                      force=args.force, file_size_mb=info.get("file_size_mb"), category=info.get("category"))
         return
 
     if args.download:
