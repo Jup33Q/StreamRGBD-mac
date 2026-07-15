@@ -145,6 +145,17 @@ class TorchDepthEstimator:
 
     @staticmethod
     def _da3_available():
+        # Insert depth-anything-3 source path and stub heavy deps before import.
+        DA3_SRC = "/tmp/depth-anything-3/src"
+        if os.path.isdir(DA3_SRC) and DA3_SRC not in sys.path:
+            sys.path.insert(0, DA3_SRC)
+        import types
+        for _mod_name in [
+            "open3d", "trimesh", "e3nn", "pycolmap", "pillow_heif",
+            "fastapi", "uvicorn", "typer", "requests", "gsplat",
+        ]:
+            if _mod_name not in sys.modules:
+                sys.modules[_mod_name] = types.ModuleType(_mod_name)
         try:
             from depth_anything_3.api import DepthAnything3  # noqa: F401
             return True
@@ -152,6 +163,17 @@ class TorchDepthEstimator:
             return False
 
     def _load_da3(self):
+        # Same path+stub setup as _da3_available in case init order differs.
+        DA3_SRC = "/tmp/depth-anything-3/src"
+        if os.path.isdir(DA3_SRC) and DA3_SRC not in sys.path:
+            sys.path.insert(0, DA3_SRC)
+        import types
+        for _mod_name in [
+            "open3d", "trimesh", "e3nn", "pycolmap", "pillow_heif",
+            "fastapi", "uvicorn", "typer", "requests", "gsplat",
+        ]:
+            if _mod_name not in sys.modules:
+                sys.modules[_mod_name] = types.ModuleType(_mod_name)
         from depth_anything_3.api import DepthAnything3
         self._da3_model = DepthAnything3.from_pretrained(self.DA3_NAME).to(self.device)
         self._da3_model.eval()

@@ -1,8 +1,14 @@
 # StreamRGBD-mac
 
-Real-time camera / NDI image-to-image transformation with optional RGBD depth output
-on Apple Silicon, accelerated with CoreML. Controlled via an HTTP API, an Elixir
-GenServer, and a Phoenix web dashboard.
+![Python](https://img.shields.io/badge/Python-3.9%20|%203.10%20|%203.11%20|%203.12-blue?logo=python)
+![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3%2FM4-orange)
+![CoreML](https://img.shields.io/badge/CoreML-Accelerated-green)
+![PyTorch](https://img.shields.io/badge/PyTorch-MPS%2FCUDA-red?logo=pytorch)
+![FPS](https://img.shields.io/badge/Performance-22.7%20FPS%20%40512%C3%97512-brightgreen)
+
+Real-time camera image-to-image transformation with optional RGBD depth output
+on Apple Silicon, accelerated with CoreML.
 
 **22.7 FPS** at 512x512 resolution on Apple M3 Ultra with SDXS-512.
 
@@ -34,23 +40,25 @@ python python/scripts/convert_models.py
 python python/camera.py --prompt "oil painting style, masterpiece"
 ```
 
+Or use the convenience launcher script (after setup):
+
+```bash
+./start_streamrgbd.sh
+```
+
 ## Project Layout
 
 ```
 .
 ├── python/                       # Python StreamDiffusion + RGBD pipeline
-│   ├── camera.py
-│   ├── camera_rgbd.py
-│   ├── camera_ndi.py
-│   ├── streamdiffusion_api.py   # Flask HTTP API for remote control
+│   ├── camera.py                 # Basic img2img pipeline (cv2 window)
+│   ├── camera_rgbd.py            # RGBD pipeline with depth output
+│   ├── camera_ndi.py             # NDI input support
+│   ├── streamdiffusion_api.py    # Flask HTTP API for remote control
 │   ├── requirements.txt
 │   └── setup.sh
-├── phx/                          # Elixir Phoenix web UI (SQLite3)
-│   └── lib/streamdiffusion_mac/
-│       ├── stream_rgbd.ex       # GenServer that owns the Python API process
-│       ├── pipeline_agent.ex
-│       └── ...
 ├── coreml_models/               # Converted CoreML models (generated)
+├── start_streamrgbd.sh          # Convenience launcher script
 └── README.md
 ```
 
@@ -98,7 +106,18 @@ python python/camera.py
 
 ## Usage
 
-### Basic
+### Convenience Launcher
+
+```bash
+# Start with default settings (SDXS-512, oil painting prompt)
+./start_streamrgbd.sh
+
+# Pass custom arguments
+./start_streamrgbd.sh --prompt "cyberpunk city, neon lights" --render-size 384
+./start_streamrgbd.sh --blend 0.3 --feedback 0.2
+```
+
+### Basic img2img
 
 ```bash
 # Default (SDXS-512, best speed/quality balance)
@@ -215,100 +234,6 @@ cp da3.mlpackage /path/to/StreamRGBD-mac/coreml_models/da3_small.mlpackage
 
 Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
 
-## Phoenix Web UI & Video Stream
-
-A Phoenix project lives in `phx/`. The dashboard now uses Membrane to capture
-the local camera, spawns a Python inference worker as a CLI command, and serves
-the processed video stream to the browser via MJPEG over HTTP.
-
-### Components
-
-- `StreamdiffusionMac.CameraPipeline` — Membrane pipeline that captures camera
-  frames and converts them to RGB.
-- `StreamdiffusionMac.InferenceWorker` — GenServer that owns the Python
-  `inference_worker.py` Port and forwards frames back and forth.
-- `StreamdiffusionMac.VideoStreamer` — GenServer that holds the latest
-  processed JPEG frame.
-- `StreamdiffusionMac.StreamRGBD` — orchestrator that starts/stops the pipeline
-  and worker.
-- Web dashboard at `/` with a live video preview.
-- JSON endpoints under `/api/stream/*` and MJPEG stream at `/api/stream/video`.
-
-### Setup
-
-```bash
-cd phx
-mix deps.get
-mix ecto.setup
-```
-
-Requires FFmpeg for Membrane camera capture:
-
-```bash
-brew install ffmpeg
-```
-
-### Run
-
-```bash
-cd phx
-mix phx.server
-```
-
-Then open <http://localhost:4000> and click **Start Engine**.
-
-### Programmatic control (IEx)
-
-```elixir
-StreamdiffusionMac.StreamRGBD.start_engine(prompt: "oil painting style, masterpiece")
-StreamdiffusionMac.StreamRGBD.set_prompt("cyberpunk city, neon lights")
-StreamdiffusionMac.StreamRGBD.status()
-StreamdiffusionMac.StreamRGBD.stop_engine()
-```
-
-### JSON API
-
-| Method | Path | Body |
-|--------|------|------|
-| `POST` | `/api/stream/start` | `{"prompt":"...", "model":"sdxs", "render-size":512, "output-size":512, "width":640, "height":480}` |
-| `POST` | `/api/stream/stop` | — |
-| `POST` | `/api/stream/prompt` | `{"prompt":"..."}` |
-| `GET`  | `/api/stream/status` | — |
-| `GET`  | `/api/stream/video` | — |
-
-### Examples
-
-```bash
-# Start the engine
-curl -X POST http://127.0.0.1:4000/api/stream/start \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"oil painting style, masterpiece"}'
-
-# Change prompt
-curl -X POST http://127.0.0.1:4000/api/stream/prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"watercolor painting"}'
-
-# Read status
-curl http://127.0.0.1:4000/api/stream/status
-
-# MJPEG stream (open in browser or save)
-curl http://127.0.0.1:4000/api/stream/video
-```
-
-### Useful tasks
-
-```bash
-# Reset the SQLite database
-cd phx && mix ecto.reset
-
-# Run tests
-cd phx && mix test
-
-# Run precommit checks
-cd phx && mix precommit
-```
-
 ## Architecture
 
 ```
@@ -395,6 +320,60 @@ Several creative approaches were also tested and yielded negative results:
 A detailed academic paper covering all experiments is available:
 - [paper.tex](paper.tex) (Japanese)
 - [paper_en.tex](paper_en.tex) (English)
+
+## Tech Stack & Dependencies
+
+This project is built entirely on Python with the following core stack:
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Runtime** | Python 3.9–3.12 | Inference backend |
+| **ML Framework** | PyTorch 2.1–2.5.x (MPS) | Text encoder, model loading, device management |
+| **Diffusion** | diffusers 0.21+ | Stable Diffusion pipeline components |
+| **Apple Acceleration** | coremltools 7.x–8.x | CoreML model conversion & inference |
+| **Vision** | OpenCV (cv2) | Camera capture, preprocessing, display window |
+| **Numeric** | NumPy 1.x (< 2.0) | Tensor operations, buffer management |
+| **Depth Estimation** | transformers, depth_anything_3 | Depth Anything V2/V3 backends |
+| **Build** | setuptools | Python environment setup (shim for coremltools) |
+
+### Referenced Models & Code
+
+| Component | Source | License |
+|-----------|--------|---------|
+| **SDXS-512** | [IDKiro/sdxs-512-0.9](https://huggingface.co/IDKiro/sdxs-512-0.9) | Apache-2.0 |
+| **SD-Turbo** | [stabilityai/sd-turbo](https://huggingface.co/stabilityai/sd-turbo) | Stability AI Community License |
+| **TAESD** | [madebyollin/taesd](https://github.com/madebyollin/taesd) | MIT |
+| **Depth Anything V2** | [LiheYoung/Depth-Anything-V2](https://github.com/LiheYoung/Depth-Anything-V2) | Apache-2.0 |
+| **Depth Anything V3** | [depth-anything/DA3-SMALL](https://huggingface.co/depth-anything/DA3-SMALL) | Apache-2.0 |
+| **StreamDiffusion** (architecture reference) | [cumulo-autumn/StreamDiffusion](https://github.com/cumulo-autumn/StreamDiffusion) | MIT |
+
+The 3-thread pipeline architecture (Camera / Inference / Display) and temporal-coherence techniques are derived from the original [StreamDiffusion](https://github.com/cumulo-autumn/StreamDiffusion) project, adapted for Apple Silicon CoreML inference.
+
+---
+
+## Framework Migration (v2.1)
+
+**v2.0 → v2.1**: Removed the Phoenix/Elixir web frontend. The project is now a **pure Python command-line tool** using OpenCV for real-time display.
+
+### Why the migration?
+
+- **macOS camera permissions** are restricted to GUI apps; Terminal.app is the simplest way to grant access
+- **Reduced dependencies**: No Elixir, Phoenix, Membrane, FFmpeg, or SQLite required
+- **Simpler deployment**: Single `start_streamrgbd.sh` script, no build step
+- **Lower latency**: Direct Python cv2 window eliminates HTTP/WebSocket overhead
+
+### What was removed?
+
+| Removed | Replaced by |
+|---------|-------------|
+| `phx/` — Phoenix 1.7 + LiveView | Direct `python/camera_rgbd.py` |
+| `StreamdiffusionMac.StreamRGBD` GenServer | `CameraApp` / `RGBDCameraApp` Python class |
+| Membrane camera pipeline | `cv2.VideoCapture` |
+| Erlang Port wire protocol | Direct Python threading + shared memory |
+| MJPEG HTTP stream | `cv2.imshow()` window |
+| PubSub status broadcast | Terminal stdout output |
+
+The CoreML inference code (`Pipeline`, `RGBDPipeline`) and model architecture remain unchanged.
 
 ## License
 

@@ -29,6 +29,13 @@ import time
 import gc
 import argparse
 import threading
+
+# Python 3.12 removed distutils; coremltools still imports it.
+# Shim via setuptools before importing coremltools.
+if "distutils" not in sys.modules:
+    import setuptools
+    sys.modules["distutils"] = setuptools._distutils
+
 import numpy as np
 import cv2
 import coremltools as ct

@@ -1,6 +1,6 @@
 # StreamRGBD-mac 操作手册
 
-> **版本**：重构后 v2.0（LiveView + PubSub + 实时 Prompt 更新）
+> **版本**：纯 Python 命令行版（cv2 窗口 + 独立启动脚本）
 > **适用平台**：macOS 14+ / Apple Silicon (M1/M2/M3/M4)
 
 ---
@@ -11,8 +11,8 @@
 2. [项目安装](#2-项目安装)
 3. [模型转换（首次）](#3-模型转换首次)
 4. [启动与运行](#4-启动与运行)
-5. [Web 界面操作](#5-web-界面操作)
-6. [API 使用](#6-api-使用)
+5. [Python 脚本参数](#5-python-脚本参数)
+6. [按键控制](#6-按键控制)
 7. [架构说明](#7-架构说明)
 8. [故障排查](#8-故障排查)
 
@@ -34,8 +34,6 @@
 | 软件 | 版本 | 用途 |
 |------|------|------|
 | Python | 3.9 - 3.12 | 推理后端（⚠️ 不支持 3.13+） |
-| Elixir | 1.15+ | Phoenix Web 服务 |
-| FFmpeg | 最新 | Membrane 摄像头捕获 |
 | Xcode Command Line Tools | 最新 | CoreML 编译 |
 
 ### 检查依赖
@@ -43,22 +41,13 @@
 ```bash
 # 检查 Python 版本
 python3 --version        # 应显示 3.9.x - 3.12.x
-
-# 检查 Elixir 版本
-elixir --version         # 应显示 1.15+
-
-# 检查 FFmpeg
-ffmpeg -version | head -1
-
-# 如果没有 FFmpeg，安装：
-brew install ffmpeg
 ```
 
 ---
 
 ## 2. 项目安装
 
-### 2.1 Python 环境（推理后端）
+### 2.1 Python 环境
 
 ```bash
 cd /Users/jup33q/Documents/kimi/workspace/streamdiffusion-mac
@@ -73,18 +62,6 @@ source .venv/bin/activate
 # 如果安装失败，尝试 legacy 版本：
 # rm -rf .venv
 # python/setup.sh --legacy
-```
-
-### 2.2 Elixir 环境（Web 前端）
-
-```bash
-cd /Users/jup33q/Documents/kimi/workspace/streamdiffusion-mac/phx
-
-# 安装依赖 + 数据库 + 前端资源
-mix setup
-
-# 如果已有环境，只需：
-# mix deps.get && mix compile
 ```
 
 ---
@@ -120,151 +97,109 @@ python python/scripts/convert_models.py --model sd-turbo
 
 ## 4. 启动与运行
 
-### 4.1 启动 Phoenix Web 服务
+### 4.1 使用启动脚本（推荐）
 
 ```bash
-cd /Users/jup33q/Documents/kimi/workspace/streamdiffusion-mac/phx
-mix phx.server
+cd /Users/jup33q/Documents/kimi/workspace/streamdiffusion-mac
+
+# 基础启动（默认 SDXS-512，油画风格）
+./start_streamrgbd.sh
+
+# 自定义参数
+./start_streamrgbd.sh --prompt "cyberpunk city, neon lights"
+./start_streamrgbd.sh --render-size 384 --blend 0.3
 ```
 
-默认监听 **http://localhost:4000**
+脚本会自动检测 `.venv` 并激活虚拟环境。
 
-### 4.2 启动后控制台输出
+### 4.2 手动运行 Python 脚本
 
+```bash
+# 确保虚拟环境已激活
+source .venv/bin/activate
+
+# 基础 img2img（无深度）
+python python/camera.py --prompt "oil painting style, masterpiece"
+
+# RGBD 深度 + 风格（streamrgbd）
+python python/camera_rgbd.py --prompt "oil painting style, masterpiece"
 ```
-[info] Running StreamdiffusionMacWeb.Endpoint with Bandit 1.5.0 at 0.0.0.0:4000 (http)
-[info] Access StreamdiffusionMacWeb.Endpoint at http://localhost:4000
+
+### 4.3 启动后
+
+首次启动时，macOS 会弹出**摄像头权限请求**，点击**"允许"**即可。
+
+窗口会显示实时画面：
+- **左侧**：AI 处理后的输出
+- **右侧**（仅 RGBD）：深度图或混合预览
+
+终端会显示当前 FPS 和提示词。
+
+---
+
+## 5. Python 脚本参数
+
+### 5.1 基础参数（camera.py / camera_rgbd.py 通用）
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--prompt` | `oil painting style, masterpiece` | AI 风格提示词 |
+| `--prompts` | `false` | 使用内置 10 组提示词画廊 |
+| `--model` | `sdxs` | 模型：`sdxs` / `sd-turbo` |
+| `--render-size` | `512` | 推理分辨率：320 / 384 / 512 |
+| `--output-size` | `512` | 输出分辨率 |
+| `--strength` | `0.5` | 去噪强度（0.1-1.0） |
+| `--blend` | `0.0` | 摄像头混合比例（0=纯AI） |
+| `--ema` | `0.4` | EMA 平滑系数 |
+| `--feedback` | `0.1` | 时间连贯性反馈（0.0-0.3） |
+| `--camera` | `0` | 摄像头设备 ID |
+| `--coreml-dir` | `./coreml_models` | CoreML 模型目录 |
+
+### 5.2 RGBD 专用参数（仅 camera_rgbd.py）
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--depth-model` | `auto` | 深度模型：`auto` / `da3-small` / `da2-small` |
+| `--depth-backend` | `auto` | 深度后端：`auto` / `coreml` / `pytorch` |
+| `--depth-coreml-path` | `./coreml_models/da3_small.mlpackage` | CoreML 深度模型路径 |
+| `--depth-preview-mode` | `mono` | 深度预览：`mono` / `alpha` / `alpha_color` / `overlay` |
+
+### 5.3 示例命令
+
+```bash
+# 基础油画风格
+python python/camera.py --prompt "oil painting style, masterpiece"
+
+# 水彩风格，降低分辨率提升帧率
+python python/camera.py --prompt "watercolor painting" --render-size 384
+
+# 30% 摄像头混合
+python python/camera.py --blend 0.3
+
+# 更强的时间连贯性
+python python/camera.py --feedback 0.25 --ema 0.7
+
+# RGBD + 深度预览为叠加层
+python python/camera_rgbd.py --depth-preview-mode overlay
+
+# 强制使用 PyTorch DA2（无 CoreML 深度模型时）
+python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small
 ```
 
 ---
 
-## 5. Web 界面操作
+## 6. 按键控制
 
-### 5.1 打开 LiveView 控制面板
+运行中按以下按键控制：
 
-浏览器访问 **http://localhost:4000**
-
-界面包含四个面板：
-
-| 面板 | 功能 |
+| 按键 | 功能 |
 |------|------|
-| **Engine** | 启动/停止推理引擎 |
-| **Instance Status** | 实时显示运行状态（Running/Ready/Busy/PID/Frames） |
-| **Prompt** | 输入并实时更新 AI 风格提示词 |
-| **Stream Preview** | MJPEG 实时视频流预览 |
-
-### 5.2 操作步骤
-
-1. **点击 "Start Engine"** — 启动 Python 推理进程和 Membrane 摄像头管道
-2. **等待状态显示 Ready: yes** — 表示 CoreML 模型已加载完毕
-3. **Stream Preview 显示视频** — 实时看到 AI 处理后的画面
-4. **在 Prompt 输入框修改提示词** — 点击 "Set" 实时推送给 Python 进程
-5. **点击 "Stop Engine"** — 停止推理并释放资源
-
-### 5.3 状态字段说明
-
-| 字段 | 含义 |
-|------|------|
-| Running | 引擎是否已启动 |
-| Ready | Python 模型是否加载完成 |
-| Busy | 是否正在处理帧 |
-| Thread ID | Python 主线程 ID |
-| Process ID | Python OS 进程 ID |
-| Frames Streamed | 已推送的帧数 |
-| Has Frame | 是否有可用帧 |
-| Error | 错误信息（如有） |
-
----
-
-## 6. API 使用
-
-### 6.1 JSON API 端点
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/stream/start` | 启动引擎 |
-| POST | `/api/stream/stop` | 停止引擎 |
-| POST | `/api/stream/prompt` | 修改提示词 |
-| GET | `/api/stream/status` | 获取状态 |
-| GET | `/api/stream/video` | MJPEG 视频流 |
-
-### 6.2 启动引擎
-
-```bash
-curl -X POST http://127.0.0.1:4000/api/stream/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "oil painting style, masterpiece",
-    "model": "sdxs",
-    "render-size": 512,
-    "output-size": 512,
-    "width": 640,
-    "height": 480
-  }'
-```
-
-### 6.3 修改提示词
-
-```bash
-curl -X POST http://127.0.0.1:4000/api/stream/prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "cyberpunk city, neon lights"}'
-```
-
-### 6.4 读取状态
-
-```bash
-curl http://127.0.0.1:4000/api/stream/status
-```
-
-返回示例：
-```json
-{
-  "ok": true,
-  "status": {
-    "running": true,
-    "ready": true,
-    "busy": false,
-    "mode": "camera",
-    "prompt": "oil painting style, masterpiece",
-    "instance_pid": 12345,
-    "instance_tid": 123456789,
-    "frame_count": 1280,
-    "has_frame": true,
-    "error": null
-  }
-}
-```
-
-### 6.5 MJPEG 视频流
-
-```bash
-# 在浏览器中直接打开
-open http://127.0.0.1:4000/api/stream/video
-
-# 或用 curl 保存帧
-curl http://127.0.0.1:4000/api/stream/video > stream.mjpeg
-```
-
-### 6.6 IEx 交互式控制
-
-```bash
-cd phx && iex -S mix
-```
-
-```elixir
-# 启动引擎
-StreamdiffusionMac.StreamRGBD.start_engine(prompt: "oil painting style, masterpiece")
-
-# 实时修改提示词
-StreamdiffusionMac.StreamRGBD.set_prompt("watercolor painting, soft brushstrokes")
-
-# 查看状态
-{:ok, status} = StreamdiffusionMac.StreamRGBD.status()
-
-# 停止引擎
-StreamdiffusionMac.StreamRGBD.stop_engine()
-```
+| `q` | 退出程序 |
+| `s` | 保存当前帧（`capture_<timestamp>.png`） |
+| `n` / `p` | 切换下/上一个预设提示词（需 `--prompts`） |
+| `+` / `-` | 增加/减少摄像头混合比例 |
+| `e` / `d` | 增加/减少 EMA 平滑系数 |
+| `m` | **RGBD 专用**：切换深度预览模式 |
 
 ---
 
@@ -273,114 +208,46 @@ StreamdiffusionMac.StreamRGBD.stop_engine()
 ### 7.1 数据流
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         浏览器 (LiveView)                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │  Start/Stop │  │  Prompt     │  │  <img src="/video">     │  │
-│  │  按钮       │  │  输入框     │  │  MJPEG 实时预览         │  │
-│  └──────┬──────┘  └──────┬──────┘  └─────────────────────────┘  │
-└─────────┼────────────────┼──────────────────────────────────────┘
-          │                │
-          │   WebSocket    │   PubSub 广播
-          │   (LiveView)   │
-          ▼                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Phoenix 后端 (Elixir)                         │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  StreamRGBD (GenServer 编排器)                            │    │
-│  │  ├─ start_engine/1  → 启动 InferenceWorker + CameraPipeline│  │
-│  │  ├─ set_prompt/1    → 通过 Port 发送 prompt 更新           │  │
-│  │  ├─ stop_engine/0   → 停止所有组件                         │  │
-│  │  └─ broadcast_status/1 → PubSub 广播到所有 LiveView        │  │
-│  └──────────────────────────────────────────────────────────┘    │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐    │
-│  │ InferenceWorker  │  │ CameraPipeline   │  │ VideoStreamer│    │
-│  │ (GenServer)      │  │ (Membrane)       │  │ (GenServer)  │    │
-│  │ ├─ 管理 Port    │  │ ├─ 摄像头捕获   │  │ ├─ 存储 JPEG │    │
-│  │ ├─ 帧大小校验   │  │ ├─ RGB 转换     │  │ ├─ 深度帧    │    │
-│  │ └─ 0xFFFFFFFF   │  │ └─ FrameSink    │  │ └─ 状态统计  │    │
-│  │   prompt 协议   │  │    转发帧       │  │              │    │
-│  └────────┬─────────┘  └──────────────────┘  └──────┬───────┘    │
-└───────────┼──────────────────────────────────────────┼────────────┘
-            │  Erlang Port (stdin/stdout)              │ MJPEG
-            │  :packet, 4 长度前缀协议                   │ 视频流
-            ▼                                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Python 推理后端                             │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  inference_worker.py                                      │    │
-│  │  ├─ read_packet()   → 解析 0xFFFFFFFF prompt 更新        │    │
-│  │  ├─ Pipeline        → CoreML img2img 推理                │    │
-│  │  ├─ write_frame()   → 输出 JPEG 到 stdout                 │    │
-│  │  └─ write_depth_frame() → 0xFFFFFFFE 深度帧              │    │
-│  └──────────────────────────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  camera.py / camera_rgbd.py (被 inference_worker 导入)   │    │
-│  │  ├─ VAE Encode    → CoreML TAESD (~5ms)                   │    │
-│  │  ├─ UNet Inference → CoreML 单步去噪 (~24ms)              │    │
-│  │  ├─ VAE Decode    → CoreML TAESD (~5ms)                   │    │
-│  │  └─ DepthEstimator → CoreML DA3 / PyTorch DA2             │    │
-│  └──────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      摄像头 (Camera)                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐ │
+│  │  Camera      │  │  Inference   │  │  Display         │ │
+│  │  Thread      │  │  Thread      │  │  Thread          │ │
+│  │  (30 FPS)    │  │  (CoreML)    │  │  (blending)      │ │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────────┘ │
+│         │                 │                               │
+│         └────→ latest_frame│                               │
+│                         └──→ latest_ai_result             │
+│                               ↑                            │
+│                               └──────────┘                 │
+│         ←──────→ EMA smoothing ←───────                   │
+│         ←──────→ blend(camera, AI) ←────                   │
+│                      ↓                                     │
+│                  cv2.imshow()                              │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 Wire 协议详解
+### 7.2 推理流水线（每帧）
 
-**Elixir → Python 帧数据：**
-```
-┌─────────────┬─────────────┬────────────────────────────┐
-│ width: u32  │ height: u32 │ rgb_bytes: [u8; width*height*3] │
-│ (little)    │ (little)    │                            │
-└─────────────┴─────────────┴────────────────────────────┘
-```
+1. **预处理**：中心裁剪，缩放到 `render_size`×`render_size`，归一化
+2. **VAE 编码**：图像 → 隐空间（CoreML TAESD，~5ms）
+3. **加噪**：固定种子噪声，保持时间连贯性
+4. **UNet 推理**：单步去噪（CoreML，~24ms for SDXS）
+5. **VAE 解码**：隐空间 → 图像（CoreML TAESD，~5ms）
+6. **后处理**：反归一化，缩放，显示
 
-**Elixir → Python Prompt 更新：**
-```
-┌────────────────┬─────────────────┬──────────────────────────┐
-│ 0xFFFFFFFF: u32│ prompt_len: u32 │ prompt: [u8; prompt_len] │
-│ (sentinel)     │ (little)        │ (UTF-8)                  │
-└────────────────┴─────────────────┴──────────────────────────┘
-```
+### 7.3 时间连贯性机制
 
-**Python → Elixir 普通帧：**
-```
-┌─────────────┬────────────────────────────┐
-│ jpeg_size   │ jpeg_bytes                 │
-│ u32 little  │ [u8; jpeg_size]              │
-└─────────────┴────────────────────────────┘
-```
+- **固定噪声种子**：每帧使用相同的噪声模式，消除闪烁
+- **Latent Feedback**：前一帧 30% 的去噪隐空间混合到当前输入
+- **EMA 平滑**：显示输出做指数移动平均
 
-**Python → Elixir 深度帧：**
-```
-┌────────────────┬─────────────┬────────────────────────────┐
-│ 0xFFFFFFFE     │ jpeg_size   │ depth_jpeg                 │
-│ u32 sentinel   │ u32 little  │ [u8; jpeg_size]              │
-└────────────────┴─────────────┴────────────────────────────┘
-```
+### 7.4 RGBD 扩展
 
-**Python → Elixir Ready 信标：**
-```
-┌─────────────┬─────────────┬─────────────┐
-│ 0: u32      │ pid: u32    │ tid: u32    │
-│             │ (little)    │ (little)    │
-└─────────────┴─────────────┴─────────────┘
-```
-
-### 7.3 关键进程树
-
-```
-StreamdiffusionMac.Supervisor (one_for_one)
-├── StreamdiffusionMacWeb.Telemetry
-├── StreamdiffusionMac.Repo
-├── StreamdiffusionMac.PipelineAgent (Agent)
-├── StreamdiffusionMac.VideoStreamer (GenServer)
-├── StreamdiffusionMac.InferenceWorker (GenServer)
-│   └── python inference_worker.py (Port 子进程)
-├── StreamdiffusionMac.StreamRGBD (GenServer)
-├── Phoenix.PubSub
-└── StreamdiffusionMacWeb.Endpoint
-    └── StreamRGBDLive (LiveView 进程，每个浏览器连接一个)
-```
+在基础 img2img 之后增加：
+- **深度估计**：对 AI 输出运行 Depth Anything（CoreML 或 PyTorch）
+- **RGBD 拼接**：RGB 3 通道 + 深度 1 通道 = 4 通道输出
+- **深度预览**：右侧窗口显示深度可视化（可按 `m` 切换模式）
 
 ---
 
@@ -390,62 +257,48 @@ StreamdiffusionMac.Supervisor (one_for_one)
 
 | 问题 | 可能原因 | 解决方案 |
 |------|----------|----------|
-| Python 未找到 | `.venv` 未创建或路径错误 | 运行 `python/setup.sh` 并激活 `source .venv/bin/activate` |
-| 编译失败 | Elixir 版本过低 | 升级至 Elixir 1.15+ |
-| 摄像头无法打开 | 权限问题或 FFmpeg 缺失 | `brew install ffmpeg`，检查系统摄像头权限 |
+| Python 未找到 | `.venv` 未创建 | 运行 `python/setup.sh` 并激活 `source .venv/bin/activate` |
+| 摄像头无法打开 | 权限问题 | 在**系统设置 → 隐私与安全性 → 摄像头**中开启 Terminal |
 | 模型加载慢 | 首次运行需编译 CoreML | 等待 30-180 秒，属于正常 |
 | 帧率低 | 硬件性能不足 | 降低 `--render-size` 到 384 或 320 |
 | 画面闪烁 | 反馈参数不合适 | 增加 `--feedback` 到 0.2-0.3 |
-| LiveView 不更新 | PubSub 未连接 | 刷新页面，检查 `mix phx.server` 日志 |
-| 深度图未输出 | 深度模型未安装 | 使用 `--depth-backend=pytorch` 或转换 CoreML 模型 |
+| 深度图未输出 | 深度模型未安装 | 使用 `--depth-backend=pytorch --depth-model da2-small` |
+| 窗口无法显示 | 无 GUI 环境 | 在 Terminal.app 中运行，而非后台/SSH |
 
-### 8.2 日志级别
+### 8.2 摄像头权限重置
+
+如果之前拒绝了权限弹窗，需要手动重置：
 
 ```bash
-# 查看详细日志
-DEBUG_STREAM=1 mix phx.server
+# 方法 1：系统设置中手动开启
+# 系统设置 → 隐私与安全性 → 摄像头 → 勾选 Terminal
 
-# 在 iex 中查看 Python 输出
-iex -S mix
-# 观察 [InferenceWorker] 开头的日志
+# 方法 2：重置所有权限（需重启 Terminal）
+tccutil reset Camera
 ```
 
-### 8.3 重置环境
+### 8.3 性能调优
 
 ```bash
-# 重置数据库
-cd phx && mix ecto.reset
+# 低分辨率 = 高帧率（M1/M2 推荐）
+python python/camera_rgbd.py --render-size 384 --output-size 384
 
-# 重新编译前端资源
-cd phx && mix assets.deploy
+# 更小模型（SD-Turbo）
+python python/camera_rgbd.py --model sd-turbo --render-size 384
 
-# 清理并重新编译
-cd phx && mix clean && mix compile
+# 关闭深度估计（仅 camera.py）
+python python/camera.py --render-size 512
 ```
 
-### 8.4 性能调优
+### 8.4 日志查看
 
 ```bash
-# 在 iex 中调整参数启动
-iex -S mix
+# 基础输出
+python python/camera_rgbd.py 2>&1 | tee stream.log
 
-StreamdiffusionMac.StreamRGBD.start_engine(
-  prompt: "oil painting style",
-  "render-size": 512,      # 可降为 384/320 提升 FPS
-  "output-size": 512,
-  strength: 0.5,           # 去噪强度（0.1-1.0）
-  feedback: 0.1            # 时间连贯性反馈（0.0-0.3）
-)
-```
-
-### 8.5 端口冲突
-
-如果 4000 端口被占用：
-
-```bash
-# 修改端口
-cd phx
-PORT=4001 mix phx.server
+# 查看 CoreML 编译进度（首次运行）
+python python/camera_rgbd.py --render-size 512
+# 等待 "Ready!" 出现
 ```
 
 ---
@@ -454,33 +307,43 @@ PORT=4001 mix phx.server
 
 | 文件 | 用途 |
 |------|------|
-| `python/camera.py` | 基础 img2img pipeline |
+| `python/camera.py` | 基础 img2img pipeline（cv2 窗口） |
 | `python/camera_rgbd.py` | RGBD pipeline（深度 + 风格） |
-| `python/inference_worker.py` | Port 子进程（重构后支持 prompt 更新 + RGBD） |
+| `python/camera_ndi.py` | NDI 输入支持 |
+| `python/camera_lora.py` | LoRA 模型支持 |
 | `python/streamdiffusion_api.py` | 独立 HTTP API（Flask） |
-| `phx/lib/streamdiffusion_mac/stream_rgbd.ex` | GenServer 编排器（重构后支持 PubSub） |
-| `phx/lib/streamdiffusion_mac/inference_worker.ex` | Port 管理（重构后支持 0xFFFFFFFF prompt 协议） |
-| `phx/lib/streamdiffusion_mac/video_streamer.ex` | 帧存储（重构后支持深度帧） |
-| `phx/lib/streamdiffusion_mac/camera_pipeline.ex` | Membrane 摄像头管道 |
-| `phx/lib/streamdiffusion_mac_web/live/stream_rgbd_live.ex` | LiveView 控制面板（新建） |
-| `phx/lib/streamdiffusion_mac_web/stream_rgbd_controller.ex` | JSON API + MJPEG 流 |
+| `python/inference_worker.py` | Port 子进程（Erlang 集成用） |
+| `python/scripts/convert_models.py` | CoreML 模型转换 |
+| `python/scripts/convert_depth_model.py` | 深度模型 CoreML 转换 |
+| `start_streamrgbd.sh` | 一键启动脚本 |
+| `coreml_models/` | 转换后的 CoreML 模型目录 |
 
 ---
 
-## 附录 B：Skill 引用
+## 附录 B：启动脚本源码
 
-本项目的架构模式已封装为可复用 Skill：
+`start_streamrgbd.sh`：
 
-**Skill 路径：** `~/.kimi/daimon/skills/stream-rgbd-elixir-python/SKILL.md`
+```bash
+#!/bin/bash
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_DIR"
 
-包含内容：
-- Erlang Port 双协议设计（帧 + prompt）
-- Membrane → FrameSink → GenServer 流水线
-- Phoenix PubSub 实时状态广播
-- OTP Supervisor 进程树配置
-- MJPEG 流服务实现
-- 性能优化与错误处理模式
+if [ ! -d ".venv/bin" ]; then
+    echo "ERROR: .venv not found. Run python/setup.sh first."
+    exit 1
+fi
+
+source .venv/bin/activate
+
+python python/camera_rgbd.py \
+    --prompt "oil painting style, masterpiece" \
+    --render-size 512 \
+    --depth-backend pytorch \
+    --depth-model da2-small \
+    "$@"
+```
 
 ---
 
-*手册生成时间：2025-07-14*
+*手册更新：2025-07-15（移除 Phoenix 前端，改为纯 Python 命令行版）*

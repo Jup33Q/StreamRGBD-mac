@@ -13,6 +13,13 @@ Usage:
 """
 import os
 import sys
+
+# Python 3.12 removed distutils; coremltools still imports it.
+# Shim via setuptools before importing coremltools.
+if "distutils" not in sys.modules:
+    import setuptools
+    sys.modules["distutils"] = setuptools._distutils
+
 import time
 import gc
 import argparse
@@ -192,7 +199,10 @@ def main():
                         help="Model to convert (default: sdxs)")
     args = parser.parse_args()
 
-    output_dir = args.output_dir
+    # Resolve output directory relative to project root (two levels up from script).
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = os.path.dirname(script_dir)
+    output_dir = os.path.join(project_root, args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
     cfg = MODEL_CONFIGS[args.model]
 
