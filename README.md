@@ -7,6 +7,7 @@
 ![PyTorch](https://img.shields.io/badge/PyTorch-MPS%2FCUDA-red?logo=pytorch)
 ![FPS](https://img.shields.io/badge/Performance-22.7%20FPS%20%40512%C3%97512-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![Hugging Face](https://img.shields.io/badge/HuggingFace-Models-yellow?logo=huggingface)](https://huggingface.co/Jup33QE/streamrgbd-mac-coreml)
 
 Real-time camera image-to-image transformation with optional RGBD depth output
 on Apple Silicon, accelerated with CoreML.
@@ -34,8 +35,11 @@ python/setup.sh
 # 3. Activate
 source .venv/bin/activate
 
-# 4. Convert models to CoreML (one-time, ~5 minutes)
+# 4. Get CoreML models (choose one)
+# Option A: Convert from scratch (one-time, ~5 minutes)
 python python/scripts/convert_models.py
+# Option B: Download pre-converted models from Hugging Face
+# https://huggingface.co/Jup33QE/streamrgbd-mac-coreml
 
 # 5. (Optional) Download LoRAs for style/character control
 ./start_download_loras.sh
