@@ -6,6 +6,7 @@
 ![CoreML](https://img.shields.io/badge/CoreML-Accelerated-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-MPS%2FCUDA-red?logo=pytorch)
 ![FPS](https://img.shields.io/badge/Performance-22.7%20FPS%20%40512%C3%97512-brightgreen)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 Real-time camera image-to-image transformation with optional RGBD depth output
 on Apple Silicon, accelerated with CoreML.
