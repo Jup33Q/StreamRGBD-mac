@@ -13,6 +13,7 @@ import threading
 import shlex
 import random
 import sqlite3
+import time
 
 # 尝试导入数据库模型（兼容模式：如果 models.py 存在则使用，否则 fallback）
 try:
@@ -27,6 +28,12 @@ try:
 except ImportError:
     print("ERROR: tkinter 不可用。请确认 Python 安装了 Tk 支持。")
     sys.exit(1)
+
+try:
+    import NDIlib
+    _NDI_OK = True
+except Exception:
+    _NDI_OK = False
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
@@ -150,12 +157,39 @@ class StreamNDIGUI:
         self.combo_render.set("512x512")
         self.combo_render.pack(anchor=tk.W, pady=(0, 8))
 
+        # --- Depth ---
+        ttk.Separator(left, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
+        ttk.Label(left, text="Depth Backend:").pack(anchor=tk.W, pady=(0, 2))
+        self.combo_depth = ttk.Combobox(left, values=["auto", "coreml", "pytorch"], state="readonly", width=20)
+        self.combo_depth.set("auto")
+        self.combo_depth.pack(anchor=tk.W, pady=(0, 8))
+
+        ttk.Label(left, text="Depth Model:").pack(anchor=tk.W, pady=(0, 2))
+        self.combo_depth_model = ttk.Combobox(
+            left,
+            values=["auto", "da3-small", "da3-base", "da3-large", "da2-small", "da2-base", "da2-large"],
+            state="readonly",
+            width=20,
+        )
+        self.combo_depth_model.set("auto")
+        self.combo_depth_model.pack(anchor=tk.W, pady=(0, 8))
+
         # --- NDI ---
         ttk.Separator(left, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
-        ttk.Label(left, text="NDI 输入源名称 (可选，留空自动检测):").pack(anchor=tk.W, pady=(0, 2))
-        self.entry_ndi_source = ttk.Entry(left, width=45)
-        self.entry_ndi_source.insert(0, "")
-        self.entry_ndi_source.pack(fill=tk.X, pady=(0, 4))
+
+        ndi_scan_frame = ttk.Frame(left)
+        ndi_scan_frame.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(ndi_scan_frame, text="NDI 输入源:").pack(side=tk.LEFT)
+        self.btn_scan_ndi = tk.Button(
+            ndi_scan_frame, text="🔄 扫描", command=self._on_scan_ndi,
+            bg="#2196F3", fg="white", activebackground="#1976D2", activeforeground="white",
+            font=("Helvetica", 9, "bold"), cursor="hand2",
+        )
+        self.btn_scan_ndi.pack(side=tk.RIGHT)
+
+        self.combo_ndi_source = ttk.Combobox(left, values=[], state="normal", width=45)
+        self.combo_ndi_source.set("")
+        self.combo_ndi_source.pack(fill=tk.X, pady=(0, 4))
 
         ttk.Label(left, text="NDI 输出名称:").pack(anchor=tk.W, pady=(0, 2))
         self.entry_ndi_output = ttk.Entry(left, width=45)
@@ -237,7 +271,13 @@ class StreamNDIGUI:
         args.append(f"--ema {self.entry_ema.get()}")
         args.append(f"--seed {self.entry_seed.get()}")
 
-        ndi_source = self.entry_ndi_source.get().strip()
+        depth_backend_val = self.combo_depth.get()
+        args.append(f"--depth-backend {shlex.quote(depth_backend_val)}")
+        depth_model_val = self.combo_depth_model.get()
+        depth_model_name = depth_model_val.split(" ")[0] if " " in depth_model_val else depth_model_val
+        args.append(f"--depth-model {shlex.quote(depth_model_name)}")
+
+        ndi_source = self.combo_ndi_source.get().strip()
         if ndi_source:
             args.append(f"--ndi-source {shlex.quote(ndi_source)}")
 
@@ -365,6 +405,59 @@ class StreamNDIGUI:
         self.entry_prompt.delete(0, tk.END)
         self.entry_prompt.insert(0, prompt_text)
         self._log(f"[PROMPT] 随机提示词: {prompt_text}")
+
+    def _on_scan_ndi(self):
+        """扫描本地可用的 NDI 源并填充下拉框。"""
+        self._log("[NDI] 扫描输入源...")
+        self.btn_scan_ndi.config(state=tk.DISABLED)
+
+        def _do_scan():
+            sources = []
+            if _NDI_OK:
+                try:
+                    if not NDIlib.initialize():
+                        self.root.after(0, lambda: self._log("[NDI] 初始化失败，请确认已安装 NDI SDK"))
+                        return
+                    finder = NDIlib.find_create_v2()
+                    if finder:
+                        waited = 0
+                        while waited < 3000:
+                            NDIlib.find_wait_for_sources(finder, 200)
+                            waited += 200
+                            found = NDIlib.find_get_current_sources(finder)
+                            if found:
+                                sources = [s.ndi_name for s in found]
+                                break
+                        if not sources:
+                            found = NDIlib.find_get_current_sources(finder)
+                            sources = [s.ndi_name for s in found]
+                        NDIlib.find_destroy(finder)
+                    NDIlib.destroy()
+                except Exception as e:
+                    self.root.after(0, lambda: self._log(f"[NDI] 扫描失败: {e}"))
+                    return
+            else:
+                self.root.after(0, lambda: self._log("[NDI] ndi-python 未安装，无法扫描"))
+                return
+
+            self.root.after(0, lambda: self._update_ndi_sources(sources))
+
+        threading.Thread(target=_do_scan, daemon=True).start()
+
+    def _update_ndi_sources(self, sources):
+        """Update the NDI source combobox with scan results."""
+        self.btn_scan_ndi.config(state=tk.NORMAL)
+        if not sources:
+            self._log("[NDI] 未找到输入源")
+            self.combo_ndi_source["values"] = []
+            self.combo_ndi_source.set("")
+            return
+
+        self.combo_ndi_source["values"] = sources
+        self.combo_ndi_source.set(sources[0])
+        self._log(f"[NDI] 找到 {len(sources)} 个源:")
+        for s in sources:
+            self._log(f"  - {s}")
 
     def _on_random_seed(self):
         new_seed = random.randint(0, 2147483647)
