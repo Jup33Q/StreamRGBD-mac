@@ -224,18 +224,41 @@ class DepthEstimator:
                 coreml_path = os.path.join(COREML_DIR, "da3_small.mlpackage")
 
         # Auto-select backend.
+        # Prefer CoreML small variants when the requested base/large CoreML model
+        # is missing, because PyTorch base/large models (especially DA3 on CPU)
+        # are much slower than the CoreML small variant.
         if backend == "auto":
             if os.path.exists(coreml_path):
                 backend = "coreml"
-            elif model_name in ("auto",) + self._DA3_MODELS and TorchDepthEstimator._da3_available():
-                backend = "pytorch"
-                if model_name == "auto":
-                    model_name = "da3-small"
             else:
-                backend = "pytorch"
-                if model_name == "auto":
-                    print("  Depth Anything V3/CoreML not found; using Depth Anything V2 Small.")
-                    model_name = "da2-small"
+                fallback_coreml = None
+                if model_name in self._DA3_MODELS:
+                    candidate = os.path.join(COREML_DIR, "da3_small.mlpackage")
+                    if os.path.exists(candidate):
+                        fallback_coreml = ("da3-small", candidate)
+                if fallback_coreml is None and model_name in self._DA2_MODELS:
+                    candidate = os.path.join(COREML_DIR, "da2_small.mlpackage")
+                    if os.path.exists(candidate):
+                        fallback_coreml = ("da2-small", candidate)
+
+                if fallback_coreml is not None:
+                    fallback_name, fallback_path = fallback_coreml
+                    print(f"  [WARN] CoreML model for '{model_name}' not found at {coreml_path}.")
+                    print(f"  [WARN] Falling back to CoreML '{fallback_name}' for fast depth estimation.")
+                    print(f"         Run the conversion script to use '{model_name}' with CoreML:")
+                    print(f"         python scripts/convert_da{3 if model_name in self._DA3_MODELS else 2}_coreml.py --variant {model_name.split('-')[1]}")
+                    backend = "coreml"
+                    model_name = fallback_name
+                    coreml_path = fallback_path
+                elif model_name in ("auto",) + self._DA3_MODELS and TorchDepthEstimator._da3_available():
+                    backend = "pytorch"
+                    if model_name == "auto":
+                        model_name = "da3-small"
+                else:
+                    backend = "pytorch"
+                    if model_name == "auto":
+                        print("  Depth Anything V3/CoreML not found; using Depth Anything V2 Small.")
+                        model_name = "da2-small"
 
         self.backend = backend
         self.model_name = model_name

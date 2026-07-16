@@ -183,7 +183,8 @@ class RGBDCameraApp:
         inf_t.start()
         stdin_t.start()
 
-        win = f"StreamDiffusion-RGBD ({self.pipeline.model_name} {self.pipeline.render_size})"
+        depth_name = getattr(getattr(self.pipeline, 'depth_estimator', None), 'model_name', 'unknown')
+        win = f"StreamDiffusion-RGBD | SD:{self.pipeline.model_name} Depth:{depth_name}"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, out_w * 2 + 20, out_h)
 
@@ -251,10 +252,16 @@ class RGBDCameraApp:
             ptotal = len(self.pipeline._all_prompts)
             ptext = self.pipeline._current_prompt[:70]
 
+            depth_name = getattr(getattr(self.pipeline, 'depth_estimator', None), 'model_name', 'unknown')
+            depth_backend = getattr(getattr(self.pipeline, 'depth_estimator', None), 'backend', 'unknown')
+            model_text = f"SD:{self.pipeline.model_name}@{self.pipeline.render_size} | Depth:{depth_name}({depth_backend})"
+
             cv2.putText(display, f"AI: {ai_fps:.1f} FPS | Prompt {pidx}/{ptotal}",
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
             cv2.putText(display, ptext,
                         (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1)
+            cv2.putText(display, model_text,
+                        (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
             cv2.putText(display, "AI Output",
                         (out_w // 2 - 55, out_h - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)

@@ -25,9 +25,23 @@ if "distutils" not in sys.modules:
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import coremltools as ct
 from safetensors.torch import load_file
 from huggingface_hub import hf_hub_download
+
+
+# coremltools does not implement upsample_bicubic2d; patch it to bilinear
+# during tracing/conversion. This matches the DA2 converter workaround.
+_ORIGINAL_INTERPOLATE = F.interpolate
+
+
+def _patched_interpolate(input, size=None, scale_factor=None, mode='nearest',
+                         align_corners=None, *args, **kwargs):
+    if mode == 'bicubic':
+        mode = 'bilinear'
+    return _ORIGINAL_INTERPOLATE(input, size, scale_factor, mode,
+                                 align_corners, *args, **kwargs)
 
 # Add the depth-anything-3 source to the path.
 DEPTH_ANYTHING_3_SRC = "/tmp/depth-anything-3/src"
@@ -149,7 +163,9 @@ VARIANT_SPECS = {
         "repo_id": "depth-anything/DA3-SMALL",
         "backbone_name": "vits",
         "out_layers": [5, 7, 9, 11],
-        "alt_start": 4,
+        # Disable the multi-view camera token for single-view depth estimation;
+        # this avoids in-place tensor assignments that coremltools cannot trace.
+        "alt_start": -1,
         "qknorm_start": 4,
         "rope_start": 4,
         "cat_token": True,
@@ -161,7 +177,7 @@ VARIANT_SPECS = {
         "repo_id": "depth-anything/DA3-BASE",
         "backbone_name": "vitb",
         "out_layers": [5, 7, 9, 11],
-        "alt_start": 4,
+        "alt_start": -1,
         "qknorm_start": 4,
         "rope_start": 4,
         "cat_token": True,
@@ -173,7 +189,7 @@ VARIANT_SPECS = {
         "repo_id": "depth-anything/DA3-LARGE",
         "backbone_name": "vitl",
         "out_layers": [11, 15, 19, 23],
-        "alt_start": 8,
+        "alt_start": -1,
         "qknorm_start": 8,
         "rope_start": 8,
         "cat_token": True,
@@ -281,29 +297,33 @@ def convert_da3_variant(variant: str, output_dir: str) -> str:
     print(f"    Output dtype: {test_out.dtype}")
 
     print("\n[3/4] Tracing model...")
-    with torch.no_grad():
-        traced = torch.jit.trace(wrapper, dummy_input)
+    F.interpolate = _patched_interpolate
+    try:
+        with torch.no_grad():
+            traced = torch.jit.trace(wrapper, dummy_input)
 
-    print("\n[4/4] Converting to CoreML...")
-    t0 = time.time()
-    coreml_model = ct.convert(
-        traced,
-        inputs=[
-            ct.TensorType(
-                name="image",
-                shape=(1, 1, 3, INPUT_SIZE, INPUT_SIZE),
-                dtype=np.float32,
-            ),
-        ],
-        outputs=[
-            ct.TensorType(name="depth", dtype=np.float32),
-        ],
-        compute_units=ct.ComputeUnit.ALL,
-        minimum_deployment_target=ct.target.macOS14,
-        convert_to="mlprogram",
-    )
-    elapsed = time.time() - t0
-    print(f"    Conversion complete in {elapsed:.1f}s")
+        print("\n[4/4] Converting to CoreML...")
+        t0 = time.time()
+        coreml_model = ct.convert(
+            traced,
+            inputs=[
+                ct.TensorType(
+                    name="image",
+                    shape=(1, 1, 3, INPUT_SIZE, INPUT_SIZE),
+                    dtype=np.float32,
+                ),
+            ],
+            outputs=[
+                ct.TensorType(name="depth", dtype=np.float32),
+            ],
+            compute_units=ct.ComputeUnit.ALL,
+            minimum_deployment_target=ct.target.macOS14,
+            convert_to="mlprogram",
+        )
+        elapsed = time.time() - t0
+        print(f"    Conversion complete in {elapsed:.1f}s")
+    finally:
+        F.interpolate = _ORIGINAL_INTERPOLATE
 
     coreml_model.save(save_path)
     print(f"    Saved: {save_path}")
