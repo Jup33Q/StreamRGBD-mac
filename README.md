@@ -81,7 +81,8 @@ python python/camera.py --prompt "oil painting style, masterpiece"
 | Script | Purpose |
 |--------|---------|
 | `./start_streamrgbd.sh` | RGBD camera + AI + optional NDI output |
-| `./start_streamrgbd_gui.sh` | Database-enhanced GUI control panel |
+| `./start_streamrgbd_gui.sh` | Database-enhanced GUI control panel (camera input) |
+| `./start_streamrgbd_ndi_gui.sh` | GUI control panel (NDI input → AI → NDI output) |
 | `./start_camera_to_ndi.sh` | Forward camera to NDI without AI |
 | `./start_ndi_scanner.sh` | Scan available NDI sources |
 | `./start_download_loras.sh` | Download recommended LoRAs from Hugging Face |
