@@ -1191,10 +1191,16 @@ class StreamRGBDGUIDB:
         model_name = model_val.split(" ")[0] if " " in model_val else model_val
         args.append(f"--model {shlex.quote(model_name)}")
 
-        # Parse output resolution: "512x512" -> render-size + output-size, "720x1280" -> render-size 512 + output-size 720x1280
+        # Parse output resolution:
+        # - "512x512"/"768x768" -> square render + same output
+        # - "720x1280" -> square render (512 or 768 depending on model),
+        #                 center-crop to 9:16, upscale to 720x1280, then depth
         res_val = self.combo_render.get()
         if res_val == "720x1280":
-            args.append("--render-size 512")
+            if model_name in ("sdxs-768", "sd-turbo-768"):
+                args.append("--render-size 768")
+            else:
+                args.append("--render-size 512")
             args.append("--output-size 720x1280")
         else:
             size = res_val.split("x")[0] if "x" in res_val else res_val
