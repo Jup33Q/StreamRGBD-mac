@@ -222,8 +222,8 @@ class StreamRGBDGUIDB:
         self.entry_style.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_style.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
 
-        # --- Style LoRA 行 ---
-        self._make_lora_row(left, "style")
+        # --- Style LoRA 行 (已禁用) ---
+        # self._make_lora_row(left, "style")
 
         # --- Subject 行（必填）---
         subject_frame = ttk.Frame(left)
@@ -239,8 +239,8 @@ class StreamRGBDGUIDB:
         self.entry_subject.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_subject.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
 
-        # --- Subject LoRA 行 ---
-        self._make_lora_row(left, "subject")
+        # --- Subject LoRA 行 (已禁用) ---
+        # self._make_lora_row(left, "subject")
 
         # --- Quality 行 ---
         quality_frame = ttk.Frame(left)
@@ -256,8 +256,8 @@ class StreamRGBDGUIDB:
         self.entry_quality.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_quality.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
 
-        # --- Quality LoRA 行 ---
-        self._make_lora_row(left, "quality")
+        # --- Quality LoRA 行 (已禁用) ---
+        # self._make_lora_row(left, "quality")
 
         # --- 合并提示词显示（可复制，带复制按钮）---
         combined_frame = ttk.LabelFrame(left, text="合并提示词（自动拼接，可拖拽选中复制）", padding="5")
@@ -1206,12 +1206,12 @@ class StreamRGBDGUIDB:
         args.append(f"--ema {self.slider_ema.get():.2f}")
         args.append(f"--seed {self.entry_seed.get()}")
 
-        # LoRA stack
-        lora_stack = self._get_lora_stack()
-        for lora in lora_stack:
-            args.append(f"--lora {shlex.quote(lora['path'])}")
-            args.append(f"--lora-weight {lora['weight']:.2f}")
-            args.append(f"--lora-category {shlex.quote(lora['category'])}")
+        # LoRA stack (已禁用，避免自动切换模型)
+        # lora_stack = self._get_lora_stack()
+        # for lora in lora_stack:
+        #     args.append(f"--lora {shlex.quote(lora['path'])}")
+        #     args.append(f"--lora-weight {lora['weight']:.2f}")
+        #     args.append(f"--lora-category {shlex.quote(lora['category'])}")
 
         ndi = self.entry_ndi.get().strip()
         if ndi:
