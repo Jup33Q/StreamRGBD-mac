@@ -38,34 +38,54 @@ source .venv/bin/activate
 # 4. Get CoreML models (choose one)
 # Option A: Convert from scratch (one-time, ~5 minutes)
 python python/scripts/convert_models.py
-# Option B: Download pre-converted models from Hugging Face
-# https://huggingface.co/Jup33QE/streamrgbd-mac-coreml
+# Optional: convert depth models
+python python/scripts/convert_da3_coreml.py --variant small
+python python/scripts/convert_da2_coreml.py --variant small
+
+# Option B: Download pre-converted models from Hugging Face (~300 MB)
+# Requires: pip install huggingface-hub
+hf download Jup33QE/streamrgbd-mac-coreml --local-dir coreml_models
+# Or with git-lfs:
+# git clone https://huggingface.co/Jup33QE/streamrgbd-mac-coreml coreml_models
 
 # 5. (Optional) Download LoRAs for style/character control
 ./start_download_loras.sh
 
-# 6. Run camera
+# 6. Run
+# Basic img2img (no depth)
 python python/camera.py --prompt "oil painting style, masterpiece"
+# RGBD + optional NDI output
+./start_streamrgbd.sh
+# Database-enhanced GUI
+./start_streamrgbd_gui.sh
 ```
 
-Or use the convenience launcher scripts (after setup):
+## Usage Examples
 
 ```bash
-# Download all recommended LoRAs (26 style + character models)
-./start_download_loras.sh
+# RGBD with custom prompt and 768x768 output
+./start_streamrgbd.sh --prompt "cyberpunk city, neon lights" --render-size 768
 
-# RGBD + NDI output (color + depth channels)
-./start_streamrgbd.sh
+# Change depth model to DA3-base (auto-picks CoreML)
+./start_streamrgbd.sh --depth-model da3-base
 
-# Camera → NDI forwarding (no AI processing)
+# Blend camera input (0=AI only, 1=camera only)
+./start_streamrgbd.sh --blend 0.3 --ema 0.5
+
+# Camera → NDI forwarding (no AI)
 ./start_camera_to_ndi.sh
-
-# GUI control panel for stream_rgbd
-./start_streamrgbd_gui.sh
-
-# NDI source scanner GUI
-./start_ndi_scanner.sh
 ```
+
+## Launcher Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `./start_streamrgbd.sh` | RGBD camera + AI + optional NDI output |
+| `./start_streamrgbd_gui.sh` | Database-enhanced GUI control panel |
+| `./start_camera_to_ndi.sh` | Forward camera to NDI without AI |
+| `./start_ndi_scanner.sh` | Scan available NDI sources |
+| `./start_download_loras.sh` | Download recommended LoRAs from Hugging Face |
+| `./start_download_loras_civitai.sh` | Download LoRAs from Civitai (needs API key) |
 
 ## Project Layout
 
