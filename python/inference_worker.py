@@ -27,7 +27,8 @@ import numpy as np
 import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from camera import Pipeline, MODEL_CONFIGS, COREML_DIR
+from pipelines.coreml import Pipeline, COREML_DIR
+from configs import MODEL_CONFIGS
 
 
 # Width sentinel used to signal a prompt update packet instead of a frame.

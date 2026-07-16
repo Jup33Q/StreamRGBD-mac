@@ -40,32 +40,3 @@ echo ""
 
 # Download all LoRAs
 python python/download_loras.py --all "$@"
-# StreamDiffusion LoRA Downloader Launcher
-# Downloads all recommended SD 1.5 compatible LoRAs from HuggingFace
-
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_DIR"
-
-if [ ! -d ".venv/bin" ]; then
-    echo "ERROR: .venv not found. Run python/setup.sh first."
-    exit 1
-fi
-
-source .venv/bin/activate
-
-echo "=========================================="
-echo "StreamDiffusion LoRA Downloader"
-echo "=========================================="
-echo ""
-
-# Show help first
-python python/download_loras.py --list
-
-echo ""
-echo "=========================================="
-echo "Starting download of all LoRAs..."
-echo "=========================================="
-echo ""
-
-# Download all LoRAs
-python python/download_loras.py --all "$@"

@@ -97,7 +97,14 @@ fi
 
 echo "  Using: $(basename "$REQ_FILE")"
 echo ""
-pip install --upgrade pip
+# Avoid forcing pip to the absolute latest version; some recent pip releases
+# have filtered out older torch wheels on certain Python/macOS combinations.
+# Only upgrade pip if it is missing or too old to function.
+pip_version=$(pip --version | awk '{print $2}')
+required_pip="24.0"
+if [ "$(printf '%s\n' "$required_pip" "$pip_version" | sort -V | head -n1)" != "$required_pip" ]; then
+    pip install --upgrade "pip>=$required_pip,<26.0"
+fi
 pip install -r "$REQ_FILE"
 
 # --- Patch coremltools _cast bug (numpy scalar conversion) ---

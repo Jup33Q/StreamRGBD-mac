@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""3-thread camera application for smooth real-time display."""
+import time
+import threading
+
+import numpy as np
+import cv2
+
+
+class CameraApp:
+    """3-thread camera application for smooth real-time display."""
+
+    def __init__(self, pipeline, camera_id=0, blend_ratio=0.0, ema_alpha=0.85):
+        self.pipeline = pipeline
+        self.camera_id = camera_id
+        self.blend_ratio = blend_ratio
+        self.ema_alpha = ema_alpha
+        self.running = False
+
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._result_lock = threading.Lock()
+        self._latest_ai_result = None
+        self._ai_update_count = 0
+        self._ai_fps = 0.0
+        self._ema_result = None
+
+    def _camera_thread(self, cap):
+        while self.running:
+            ret, frame = cap.read()
+            if ret:
+                with self._frame_lock:
+                    self._latest_frame = frame
+
+    def _inference_thread(self):
+        fps_times = []
+        while self.running:
+            with self._frame_lock:
+                frame = self._latest_frame
+            if frame is None:
+                time.sleep(0.001)
+                continue
+
+            t0 = time.perf_counter()
+            result = self.pipeline.process_frame(frame)
+            elapsed = time.perf_counter() - t0
+
+            fps_times.append(elapsed)
+            if len(fps_times) > 30:
+                fps_times.pop(0)
+
+            with self._result_lock:
+                self._latest_ai_result = result
+                self._ai_update_count += 1
+                self._ai_fps = 1.0 / (sum(fps_times) / len(fps_times))
+
+    def run(self):
+        print(f"\nOpening camera {self.camera_id}...")
+        cap = cv2.VideoCapture(self.camera_id)
+        if not cap.isOpened():
+            print("ERROR: Cannot open camera!")
+            return
+
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 60)
+
+        for _ in range(30):
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                break
+            time.sleep(0.1)
+        else:
+            print("ERROR: Cannot read frames!")
+            cap.release()
+            return
+
+        out_sz = self.pipeline.output_size
+        print(f"Camera: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+        print(f"Blend: {self.blend_ratio:.1f} (0=AI only, 1=camera only)")
+        print(f"EMA: {self.ema_alpha:.2f}")
+        print("Controls: q=quit  s=save  n/p=prompt  +/-=blend  e/d=EMA")
+        print("")
+
+        self.running = True
+        cam_t = threading.Thread(target=self._camera_thread, args=(cap,), daemon=True)
+        inf_t = threading.Thread(target=self._inference_thread, daemon=True)
+        cam_t.start()
+        inf_t.start()
+
+        win = f"StreamDiffusion-Mac ({self.pipeline.model_name} {self.pipeline.render_size})"
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win, out_sz * 2 + 20, out_sz)
+
+        display_count = 0
+        total_start = time.perf_counter()
+        display_fps_times = []
+
+        while self.running:
+            dt0 = time.perf_counter()
+
+            with self._frame_lock:
+                frame = self._latest_frame
+            with self._result_lock:
+                ai_result = self._latest_ai_result
+                ai_fps = self._ai_fps
+
+            if frame is None:
+                time.sleep(0.001)
+                continue
+
+            # Camera display
+            h, w = frame.shape[:2]
+            if w > h:
+                off = (w - h) // 2
+                fsq = frame[:, off:off + h]
+            elif h > w:
+                off = (h - w) // 2
+                fsq = frame[off:off + w, :]
+            else:
+                fsq = frame
+            cam_display = cv2.resize(fsq, (out_sz, out_sz))
+
+            if ai_result is not None:
+                if self._ema_result is None:
+                    self._ema_result = ai_result.astype(np.float32)
+                else:
+                    self._ema_result = (
+                        self.ema_alpha * self._ema_result
+                        + (1.0 - self.ema_alpha) * ai_result.astype(np.float32)
+                    )
+                smooth_ai = self._ema_result.clip(0, 255).astype(np.uint8)
+
+                if self.blend_ratio > 0.01:
+                    result_display = cv2.addWeighted(
+                        smooth_ai, 1.0 - self.blend_ratio,
+                        cam_display, self.blend_ratio, 0,
+                    )
+                else:
+                    result_display = smooth_ai
+            else:
+                result_display = cam_display
+
+            display = np.hstack([cam_display, result_display])
+
+            display_count += 1
+            dt = time.perf_counter() - dt0
+            display_fps_times.append(dt)
+            if len(display_fps_times) > 60:
+                display_fps_times.pop(0)
+
+            pidx = self.pipeline._prompt_index + 1
+            ptotal = len(self.pipeline._all_prompts)
+            ptext = self.pipeline._current_prompt[:70]
+
+            cv2.putText(display, f"AI: {ai_fps:.1f} FPS | Prompt {pidx}/{ptotal}",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+            cv2.putText(display, ptext,
+                        (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1)
+            cv2.putText(display, "Camera",
+                        (out_sz // 2 - 40, out_sz - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            cv2.putText(display, "AI Output",
+                        (out_sz + out_sz // 2 - 55, out_sz - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+            cv2.imshow(win, display)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                self.running = False
+            elif key == ord('s'):
+                fn = f"capture_{int(time.time())}.png"
+                cv2.imwrite(fn, result_display)
+                print(f"  Saved: {fn}")
+            elif key == ord('n'):
+                p = self.pipeline.next_prompt()
+                print(f"  [{pidx}/{ptotal}] {p[:60]}")
+            elif key == ord('p'):
+                p = self.pipeline.prev_prompt()
+                print(f"  [{pidx}/{ptotal}] {p[:60]}")
+            elif key in (ord('+'), ord('=')):
+                self.blend_ratio = min(1.0, self.blend_ratio + 0.05)
+                print(f"  Blend: {self.blend_ratio:.2f}")
+            elif key == ord('-'):
+                self.blend_ratio = max(0.0, self.blend_ratio - 0.05)
+                print(f"  Blend: {self.blend_ratio:.2f}")
+            elif key == ord('e'):
+                self.ema_alpha = min(0.99, self.ema_alpha + 0.05)
+                print(f"  EMA: {self.ema_alpha:.2f}")
+            elif key == ord('d'):
+                self.ema_alpha = max(0.0, self.ema_alpha - 0.05)
+                print(f"  EMA: {self.ema_alpha:.2f}")
+
+        self.running = False
+        cam_t.join(timeout=2)
+        inf_t.join(timeout=2)
+
+        total = time.perf_counter() - total_start
+        with self._result_lock:
+            ai_total = self._ai_update_count
+        print(f"\nSession: {display_count} display frames in {total:.1f}s = {display_count / total:.1f} display FPS")
+        print(f"  AI inference: {ai_total} frames = {ai_total / total:.1f} AI FPS")
+
+        cap.release()
+        cv2.destroyAllWindows()

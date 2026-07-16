@@ -16,6 +16,7 @@ Usage:
 """
 import os
 import sys
+import json
 import subprocess
 import threading
 import shlex
@@ -48,6 +49,7 @@ try:
     from models import (
         db,
         StreamDiffusionModel, DepthModel, LoraModel,
+        StyleLoraModel, SubjectLoraModel, QualityLoraModel,
         StylePrompt, SubjectPrompt, QualityPrompt,
         PromptCategory, AppSettings,
     )
@@ -59,6 +61,9 @@ except Exception as _e:
     StreamDiffusionModel = None
     DepthModel = None
     LoraModel = None
+    StyleLoraModel = None
+    SubjectLoraModel = None
+    QualityLoraModel = None
     StylePrompt = None
     SubjectPrompt = None
     QualityPrompt = None
@@ -109,6 +114,25 @@ _FALLBACK_QUALITY_PROMPTS = [
     ("HDR photography, extreme dynamic range", "HDR"),
     ("trending on artstation, professional digital art", "ArtStation"),
 ]
+
+# 按 category 拆分的 fallback LoRA
+# 每项: (name, display_name, file_path, weight_min, weight_max, weight_default)
+_FALLBACK_LORAS = {
+    "style": [
+        ("pixelart-redmond", "PixelArt 像素艺术", "loras/pixelart_redmond.safetensors", 0.6, 1.0, 0.8),
+        ("sketch-sd15", "Sketch 素描", "loras/sketch_sd15.safetensors", 0.5, 0.9, 0.7),
+        ("civitai-moxin-ink", "MoXin 中国水墨", "loras/moxin-ink.safetensors", 0.6, 1.0, 0.8),
+    ],
+    "subject": [
+        ("victorian-dress", "Victorian Dress 维多利亚礼服", "loras/victorian_dress.safetensors", 0.5, 1.0, 0.75),
+        ("kimono-outfit", "Kimono Outfit 和服", "loras/kimono_outfit.safetensors", 0.5, 1.0, 0.75),
+        ("cyberpunk-outfit", "Cyberpunk Outfit 赛博朋克服装", "loras/cyberpunk_outfit.safetensors", 0.5, 1.0, 0.75),
+    ],
+    "quality": [
+        ("civitai-detail-tweaker", "Detail Tweaker 细节增强", "loras/detail-tweaker.safetensors", -2.0, 2.0, 0.5),
+        ("civitai-more-details", "More Details 更多细节", "loras/more-details.safetensors", 0.3, 1.0, 0.6),
+    ],
+}
 
 
 class StreamRGBDGUIDB:
@@ -198,6 +222,9 @@ class StreamRGBDGUIDB:
         self.entry_style.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_style.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
 
+        # --- Style LoRA 行 ---
+        self._make_lora_row(left, "style")
+
         # --- Subject 行（必填）---
         subject_frame = ttk.Frame(left)
         subject_frame.pack(fill=tk.X, pady=(0, 2))
@@ -212,6 +239,9 @@ class StreamRGBDGUIDB:
         self.entry_subject.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_subject.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
 
+        # --- Subject LoRA 行 ---
+        self._make_lora_row(left, "subject")
+
         # --- Quality 行 ---
         quality_frame = ttk.Frame(left)
         quality_frame.pack(fill=tk.X, pady=(0, 2))
@@ -225,6 +255,9 @@ class StreamRGBDGUIDB:
         self.entry_quality.insert(0, "masterpiece, best quality, ultra detailed, 8k")
         self.entry_quality.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry_quality.bind("<KeyRelease>", lambda e: self._update_combined_prompt())
+
+        # --- Quality LoRA 行 ---
+        self._make_lora_row(left, "quality")
 
         # --- 合并提示词显示（可复制，带复制按钮）---
         combined_frame = ttk.LabelFrame(left, text="合并提示词（自动拼接，可拖拽选中复制）", padding="5")
@@ -510,6 +543,195 @@ class StreamRGBDGUIDB:
         self.combo_depth_model.set(values[0])
 
     # ------------------------------------------------------------------
+    # 按 Category 加载 LoRA（拆表 + slider 权重）
+    # ------------------------------------------------------------------
+    def _load_lora_data(self):
+        """从分类 LoRA 表加载数据，返回 {category: [dict, ...]}。"""
+        data = {"style": [], "subject": [], "quality": []}
+        if self._db_available:
+            table_map = {
+                "style": (StyleLoraModel, "style_subtype"),
+                "subject": (SubjectLoraModel, "subject_subtype"),
+                "quality": (QualityLoraModel, "quality_subtype"),
+            }
+            for category, (table, subtype_field) in table_map.items():
+                try:
+                    for m in table.select().where(table.is_active == True):
+                        data[category].append({
+                            "name": m.name,
+                            "display_name": m.display_name or m.name,
+                            "path": m.file_path,
+                            "weight_min": m.weight_min,
+                            "weight_max": m.weight_max,
+                            "weight_default": m.weight_default,
+                            "sub_type": getattr(m, subtype_field, "other"),
+                        })
+                except Exception as e:
+                    self._log(f"[WARN] 加载 {category} LoRA 失败: {e}")
+        # Fallback
+        for category, items in _FALLBACK_LORAS.items():
+            if not data[category]:
+                for name, display_name, path, wmin, wmax, wdefault in items:
+                    data[category].append({
+                        "name": name,
+                        "display_name": display_name,
+                        "path": path,
+                        "weight_min": wmin,
+                        "weight_max": wmax,
+                        "weight_default": wdefault,
+                        "sub_type": "other",
+                    })
+        return data
+
+    def _resolve_lora_path(self, path):
+        """将 LoRA 相对路径解析为实际存在的绝对路径。"""
+        if not path:
+            return path
+        if os.path.isabs(path) and os.path.exists(path):
+            return path
+        # 尝试项目根目录
+        for base in [PROJECT_DIR, os.path.dirname(os.path.abspath(__file__))]:
+            candidate = os.path.join(base, path)
+            if os.path.exists(candidate):
+                return os.path.abspath(candidate)
+        # 尝试 python/loras/ 目录（按文件名匹配）
+        loras_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "loras")
+        basename = os.path.basename(path)
+        candidate = os.path.join(loras_dir, basename)
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+        return path
+
+    def _make_lora_row(self, parent, category: str):
+        """为指定 category 创建 LoRA 选择器 + 权重滑块行。"""
+        if not hasattr(self, "_lora_data"):
+            self._lora_data = self._load_lora_data()
+        if not hasattr(self, "_lora_widgets"):
+            self._lora_widgets = {}
+        if not hasattr(self, "_lora_selection"):
+            self._lora_selection = {}
+        if not hasattr(self, "_lora_debounce_id"):
+            self._lora_debounce_id = None
+
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(frame, text=f"{category.capitalize()} LoRA:", width=12).pack(side=tk.LEFT)
+
+        choices = [("None", None)]
+        for item in self._lora_data.get(category, []):
+            label = f"{item['display_name']} ({item['name']})"
+            choices.append((label, item))
+
+        combo = ttk.Combobox(frame, state="readonly", width=22)
+        combo["values"] = [c[0] for c in choices]
+        combo.set(choices[0][0])
+        combo.pack(side=tk.LEFT, padx=(0, 6))
+
+        # Default weight limits until a LoRA is selected
+        wmin, wmax, wdefault = -2.0, 2.0, 0.0
+        slider = tk.Scale(
+            frame, from_=wmin, to=wmax, orient=tk.HORIZONTAL,
+            resolution=0.05, showvalue=False, length=120,
+        )
+        slider.set(wdefault)
+        slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        lbl = ttk.Label(frame, text=f"{wdefault:.2f}", width=6)
+        lbl.pack(side=tk.LEFT)
+
+        self._lora_widgets[category] = {
+            "frame": frame,
+            "combo": combo,
+            "slider": slider,
+            "label": lbl,
+            "choices": choices,
+        }
+        self._lora_selection[category] = {"item": None, "weight": 0.0}
+
+        def _on_combo_change(evt, cat=category):
+            self._on_lora_selection_changed(cat)
+
+        def _on_slider_change(value, cat=category):
+            self._on_lora_slider_changed(cat, float(value))
+
+        combo.bind("<<ComboboxSelected>>", _on_combo_change)
+        slider.config(command=_on_slider_change)
+
+    def _on_lora_selection_changed(self, category: str):
+        """LoRA 选择变化时更新 slider 的限位和默认值。"""
+        widgets = self._lora_widgets[category]
+        combo = widgets["combo"]
+        slider = widgets["slider"]
+        lbl = widgets["label"]
+        selected_label = combo.get()
+
+        item = None
+        for label, it in widgets["choices"]:
+            if label == selected_label:
+                item = it
+                break
+
+        if item is None:
+            # None selected
+            slider.config(from_=-2.0, to=2.0)
+            slider.set(0.0)
+            lbl.config(text="0.00")
+            self._lora_selection[category] = {"item": None, "weight": 0.0}
+        else:
+            wmin, wmax, wdefault = item["weight_min"], item["weight_max"], item["weight_default"]
+            slider.config(from_=wmin, to=wmax)
+            slider.set(wdefault)
+            lbl.config(text=f"{wdefault:.2f}")
+            self._lora_selection[category] = {"item": item, "weight": wdefault}
+
+        self._on_lora_update()
+
+    def _on_lora_slider_changed(self, category: str, value: float):
+        """Slider 数值变化时更新显示并触发 debounced 更新。"""
+        widgets = self._lora_widgets[category]
+        widgets["label"].config(text=f"{value:.2f}")
+        sel = self._lora_selection.get(category, {})
+        if sel.get("item") is not None:
+            sel["weight"] = value
+        self._on_lora_update()
+
+    def _on_lora_update(self):
+        """Debounced: 构建 LoRA stack 并发送到运行中的子进程。"""
+        if self._lora_debounce_id is not None:
+            self.root.after_cancel(self._lora_debounce_id)
+        self._lora_debounce_id = self.root.after(250, self._send_lora_stack)
+
+    def _get_lora_stack(self):
+        """根据当前 UI 选择构建 LoRA stack（启动参数用）。"""
+        stack = []
+        for category in ["style", "subject", "quality"]:
+            sel = self._lora_selection.get(category, {})
+            item = sel.get("item")
+            weight = sel.get("weight", 0.0)
+            if item is not None and weight != 0.0:
+                stack.append({
+                    "path": self._resolve_lora_path(item["path"]),
+                    "weight": weight,
+                    "category": category,
+                })
+        return stack
+
+    def _send_lora_stack(self):
+        """向运行中的子进程发送 LoRA stack 更新。"""
+        self._lora_debounce_id = None
+        stack = self._get_lora_stack()
+        if self._proc is None or self._proc.poll() is not None:
+            return
+        try:
+            payload = json.dumps(stack, ensure_ascii=False)
+            self._proc.stdin.write(f"lora:{payload}\n")
+            self._proc.stdin.flush()
+            self._log(f"[LORA] 已发送 LoRA stack: {len(stack)} 个")
+        except Exception as e:
+            self._log(f"[ERROR] 发送 LoRA stack 失败: {e}")
+
+    # ------------------------------------------------------------------
     # 按 Category 随机提示词（核心重构）
     # ------------------------------------------------------------------
     def _on_random_category(self, category: str):
@@ -637,10 +859,10 @@ class StreamRGBDGUIDB:
     # 模型管理窗口
     # ------------------------------------------------------------------
     def _open_model_manager(self):
-        """打开模型列表管理窗口（三表分 Tab 展示）。"""
+        """打开模型列表管理窗口（五表分 Tab 展示）。"""
         win = tk.Toplevel(self.root)
         win.title("模型管理")
-        win.geometry("750x500")
+        win.geometry("800x520")
         win.transient(self.root)
         win.grab_set()
 
@@ -649,28 +871,34 @@ class StreamRGBDGUIDB:
         notebook = ttk.Notebook(win)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
+        # (tab_name, table_class, subtype_field, fallback_list)
         tabs_config = [
-            ("StreamDiffusion", StreamDiffusionModel, _FALLBACK_MODELS),
-            ("Depth", DepthModel, _FALLBACK_DEPTH_MODELS),
-            ("LoRA", LoraModel, []),
+            ("StreamDiffusion", StreamDiffusionModel, None, _FALLBACK_MODELS),
+            ("Depth", DepthModel, None, _FALLBACK_DEPTH_MODELS),
+            ("Style-LoRA", StyleLoraModel, "style_subtype", []),
+            ("Subject-LoRA", SubjectLoraModel, "subject_subtype", []),
+            ("Quality-LoRA", QualityLoraModel, "quality_subtype", []),
         ]
 
-        for tab_name, table_cls, fallback_list in tabs_config:
+        for tab_name, table_cls, subtype_field, fallback_list in tabs_config:
             frame = ttk.Frame(notebook)
             notebook.add(frame, text=tab_name)
 
-            if tab_name == "LoRA":
-                columns = ("name", "display", "weight", "path", "active")
+            is_lora = subtype_field is not None
+            if is_lora:
+                columns = ("name", "display", "subtype", "weight", "path", "active")
                 tree = ttk.Treeview(frame, columns=columns, show="headings", height=14)
                 tree.heading("name", text="模型名")
                 tree.heading("display", text="显示名")
+                tree.heading("subtype", text="二级分类")
                 tree.heading("weight", text="权重范围")
                 tree.heading("path", text="路径")
                 tree.heading("active", text="启用")
                 tree.column("name", width=120)
                 tree.column("display", width=150)
-                tree.column("weight", width=100, anchor=tk.CENTER)
-                tree.column("path", width=200)
+                tree.column("subtype", width=80, anchor=tk.CENTER)
+                tree.column("weight", width=110, anchor=tk.CENTER)
+                tree.column("path", width=180)
                 tree.column("active", width=50, anchor=tk.CENTER)
             else:
                 columns = ("name", "display", "path", "active")
@@ -681,7 +909,7 @@ class StreamRGBDGUIDB:
                 tree.heading("active", text="启用")
                 tree.column("name", width=120)
                 tree.column("display", width=200)
-                tree.column("path", width=250)
+                tree.column("path", width=300)
                 tree.column("active", width=50, anchor=tk.CENTER)
 
             scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
@@ -692,11 +920,13 @@ class StreamRGBDGUIDB:
             if self._db_available and table_cls is not None:
                 try:
                     for m in table_cls.select():
-                        if tab_name == "LoRA":
+                        if is_lora:
                             weight_str = f"{m.weight_min}~{m.weight_max} (d={m.weight_default})"
+                            subtype = getattr(m, subtype_field, "other") or "other"
                             tree.insert("", tk.END, values=(
                                 m.name,
                                 m.display_name or "—",
+                                subtype,
                                 weight_str,
                                 getattr(m, "file_path", "—") or "—",
                                 "✓" if m.is_active else "✗"
@@ -714,8 +944,10 @@ class StreamRGBDGUIDB:
                 if fallback_list:
                     for name, desc in fallback_list:
                         tree.insert("", tk.END, values=(name, desc, "—", "✓"))
+                elif is_lora:
+                    tree.insert("", tk.END, values=("数据库未连接", "—", "—", "—", "—", "—"))
                 else:
-                    tree.insert("", tk.END, values=("数据库未连接", "—", "—", "—", "—"))
+                    tree.insert("", tk.END, values=("数据库未连接", "—", "—", "—"))
 
         ttk.Button(win, text="关闭", command=win.destroy).pack(pady=10)
 
@@ -802,6 +1034,14 @@ class StreamRGBDGUIDB:
                 "seed": self.entry_seed.get(),
                 "ndi_output": self.entry_ndi.get(),
             }
+            # 保存每个 category 的 LoRA 选择
+            for category in ["style", "subject", "quality"]:
+                sel = self._lora_selection.get(category, {})
+                item = sel.get("item")
+                settings[f"lora_{category}"] = json.dumps({
+                    "name": item["name"] if item else "",
+                    "weight": sel.get("weight", 0.0),
+                }, ensure_ascii=False)
             for key, value in settings.items():
                 AppSettings.set_value(key, value)
             self._log("[SETTINGS] 设置已保存到数据库")
@@ -885,6 +1125,35 @@ class StreamRGBDGUIDB:
                 self.entry_ndi.delete(0, tk.END)
                 self.entry_ndi.insert(0, ndi)
 
+            # 加载 LoRA 选择
+            for category in ["style", "subject", "quality"]:
+                raw = AppSettings.get_value(f"lora_{category}")
+                if not raw:
+                    continue
+                try:
+                    saved = json.loads(raw)
+                    name = saved.get("name", "")
+                    weight = float(saved.get("weight", 0.0))
+                    if name and category in self._lora_widgets:
+                        widgets = self._lora_widgets[category]
+                        # 找到对应的 combobox 项
+                        for idx, (label, item) in enumerate(widgets["choices"]):
+                            if item is not None and item["name"] == name:
+                                widgets["combo"].set(label)
+                                self._on_lora_selection_changed(category)
+                                # 在限位内应用保存的权重
+                                item = self._lora_selection[category].get("item")
+                                if item:
+                                    wmin = item["weight_min"]
+                                    wmax = item["weight_max"]
+                                    weight = max(wmin, min(wmax, weight))
+                                    widgets["slider"].set(weight)
+                                    self._lora_selection[category]["weight"] = weight
+                                    widgets["label"].config(text=f"{weight:.2f}")
+                                break
+                except Exception as e:
+                    self._log(f"[WARN] 加载 {category} LoRA 设置失败: {e}")
+
             self._log("[SETTINGS] 已从数据库加载设置")
         except Exception as e:
             self._log(f"[WARN] 加载设置失败: {e}")
@@ -919,6 +1188,13 @@ class StreamRGBDGUIDB:
         args.append(f"--blend {self.slider_blend.get():.2f}")
         args.append(f"--ema {self.slider_ema.get():.2f}")
         args.append(f"--seed {self.entry_seed.get()}")
+
+        # LoRA stack
+        lora_stack = self._get_lora_stack()
+        for lora in lora_stack:
+            args.append(f"--lora {shlex.quote(lora['path'])}")
+            args.append(f"--lora-weight {lora['weight']:.2f}")
+            args.append(f"--lora-category {shlex.quote(lora['category'])}")
 
         ndi = self.entry_ndi.get().strip()
         if ndi:

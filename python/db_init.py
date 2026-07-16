@@ -114,6 +114,23 @@ STREAMDIFFUSION_MODEL_SEEDS = [
         "is_default": False,
         "is_active": True,
     },
+    {
+        "name": "sd-1-5",
+        "display_name": "SD 1.5 (LoRA / CoreML 可选)",
+        "file_path": "coreml_models/unet_sd_1_5.mlpackage",
+        "model_kind": "img2img",
+        "description": "Stable Diffusion 1.5 基础模型。用于加载 SD 1.5 LoRA；CoreML 路径需先运行转换脚本。",
+        "parameters": json.dumps({
+            "width": 512,
+            "height": 512,
+            "steps": 1,
+            "cfg_scale": 1.0,
+            "strength": 0.5,
+            "base_model": "runwayml/stable-diffusion-v1-5",
+        }),
+        "is_default": False,
+        "is_active": True,
+    },
 ]
 
 # ── DepthModel 种子数据 ──
@@ -1086,6 +1103,46 @@ def seed_depth_models():
     print(f"[INFO] DepthModel: 插入 {count} 条新记录，总计 {DepthModel.select().count()} 条")
 
 
+def _column_exists(table_name, column_name):
+    """检查 SQLite 表中是否存在指定列。"""
+    cursor = database.execute_sql(f"PRAGMA table_info({table_name});")
+    rows = cursor.fetchall()
+    return any(row[1] == column_name for row in rows)
+
+
+def migrate_lora_model_table():
+    """
+    迁移旧的 lora_model 表：补充 category / sub_type 字段。
+    如果字段已存在则跳过；否则添加字段并用种子数据回填已有记录。
+    """
+    need_category = not _column_exists("lora_model", "category")
+    need_sub_type = not _column_exists("lora_model", "sub_type")
+
+    if need_category:
+        database.execute_sql(
+            "ALTER TABLE lora_model ADD COLUMN category VARCHAR(16) DEFAULT 'subject';"
+        )
+        print("[MIGRATE] lora_model 已添加 category 字段")
+    if need_sub_type:
+        database.execute_sql(
+            "ALTER TABLE lora_model ADD COLUMN sub_type VARCHAR(32) DEFAULT 'other';"
+        )
+        print("[MIGRATE] lora_model 已添加 sub_type 字段")
+
+    if need_category or need_sub_type:
+        # 用种子数据回填已有记录的分类信息
+        seed_map = {d["name"]: (d.get("category", "subject"), d.get("sub_type", "other"))
+                    for d in LORA_MODEL_SEEDS}
+        updated = 0
+        for lora in LoraModel.select():
+            category, sub_type = seed_map.get(lora.name, ("subject", "other"))
+            LoraModel.update(category=category, sub_type=sub_type).where(
+                LoraModel.id == lora.id
+            ).execute()
+            updated += 1
+        print(f"[MIGRATE] 已回填 {updated} 条 LoRA 记录的 category/sub_type")
+
+
 def seed_lora_models():
     """
     插入 LoRA 种子数据。
@@ -1140,16 +1197,6 @@ def seed_lora_models():
     print(f"[INFO] StyleLoraModel: 插入 {count_style} 条新记录，总计 {StyleLoraModel.select().count()} 条")
     print(f"[INFO] SubjectLoraModel: 插入 {count_subject} 条新记录，总计 {SubjectLoraModel.select().count()} 条")
     print(f"[INFO] QualityLoraModel: 插入 {count_quality} 条新记录，总计 {QualityLoraModel.select().count()} 条")
-    """插入 LoraModel 种子数据"""
-    count = 0
-    for data in LORA_MODEL_SEEDS:
-        _, created = LoraModel.get_or_create(
-            name=data["name"],
-            defaults=data,
-        )
-        if created:
-            count += 1
-    print(f"[INFO] LoraModel: 插入 {count} 条新记录，总计 {LoraModel.select().count()} 条")
 
 
 def seed_prompt_categories():
@@ -1290,6 +1337,7 @@ def init_db():
     with database.atomic():
         seed_streamdiffusion_models()
         seed_depth_models()
+        migrate_lora_model_table()
         seed_lora_models()
         seed_prompt_categories()
         seed_style_prompts()

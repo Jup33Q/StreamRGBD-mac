@@ -206,15 +206,21 @@ def get_loras_dir():
 
 
 def _update_db_file_size(name: str, size_mb: float):
-    """更新数据库中 LoRA 的 file_size_mb 字段（如果数据库可用）。"""
+    """更新数据库中 LoRA 的 file_size_mb 字段（统一表 + 分类拆表）。"""
     try:
         current_dir = Path(__file__).parent.resolve()
         if str(current_dir) not in sys.path:
             sys.path.insert(0, str(current_dir))
-        from models import LoraModel
-        query = LoraModel.update(file_size_mb=round(size_mb, 2)).where(LoraModel.name == name.replace("_", "-"))
-        query.execute()
-    except Exception as e:
+        from models import LoraModel, StyleLoraModel, SubjectLoraModel, QualityLoraModel
+        db_name = name.replace("_", "-")
+        size = round(size_mb, 2)
+        # 统一表
+        LoraModel.update(file_size_mb=size).where(LoraModel.name == db_name).execute()
+        # 分类拆表：更新存在该名称的表
+        StyleLoraModel.update(file_size_mb=size).where(StyleLoraModel.name == db_name).execute()
+        SubjectLoraModel.update(file_size_mb=size).where(SubjectLoraModel.name == db_name).execute()
+        QualityLoraModel.update(file_size_mb=size).where(QualityLoraModel.name == db_name).execute()
+    except Exception:
         # DB 可能不存在或模型名不匹配，静默忽略
         pass
 

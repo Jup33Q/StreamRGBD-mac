@@ -2,14 +2,16 @@
 """
 CoreML Model Conversion Script for StreamDiffusion-Mac
 
-Converts SDXS-512 UNet + TinyVAE (encoder/decoder) to CoreML format.
+Converts UNet + TinyVAE (encoder/decoder) to CoreML format.
+Supported base models: sdxs, sd-turbo, sd-1-5.
 SDXS-512 is the optimal model for real-time inference on Apple Silicon,
 achieving 22.7 FPS camera img2img on M3 Ultra.
 
 Usage:
     python scripts/convert_models.py
     python scripts/convert_models.py --output-dir ./coreml_models
-    python scripts/convert_models.py --model sd-turbo   # Use SD-Turbo instead
+    python scripts/convert_models.py --model sd-turbo
+    python scripts/convert_models.py --model sd-1-5     # SD 1.5 for LoRA
 """
 import os
 import sys
@@ -27,17 +29,17 @@ import numpy as np
 import torch
 import coremltools as ct
 
+# Load centralized model configuration from JSON.
+script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+from configs import MODEL_CONFIGS
+
+# The conversion script uses a different key name for the CoreML UNet output.
+# Build a mapping that preserves the centralized config while adding unet_name.
 MODEL_CONFIGS = {
-    "sdxs": {
-        "model_id": "IDKiro/sdxs-512-0.9",
-        "hidden_size": 1024,
-        "unet_name": "unet_sdxs_512",
-    },
-    "sd-turbo": {
-        "model_id": "stabilityai/sd-turbo",
-        "hidden_size": 1024,
-        "unet_name": "unet_sd_turbo",
-    },
+    name: {**cfg, "unet_name": cfg["unet_prefix"]}
+    for name, cfg in MODEL_CONFIGS.items()
 }
 
 
@@ -196,7 +198,7 @@ def main():
     parser.add_argument("--output-dir", default="coreml_models",
                         help="Output directory for CoreML models")
     parser.add_argument("--model", default="sdxs", choices=list(MODEL_CONFIGS.keys()),
-                        help="Model to convert (default: sdxs)")
+                        help="Model to convert (default: sdxs). Supported: sdxs, sd-turbo, sd-1-5.")
     args = parser.parse_args()
 
     # Resolve output directory relative to project root (two levels up from script).

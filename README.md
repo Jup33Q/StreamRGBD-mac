@@ -67,14 +67,15 @@ Or use the convenience launcher scripts (after setup):
 ```
 .
 ├── python/                       # Python StreamDiffusion + RGBD pipeline
-│   ├── camera.py                 # Basic img2img pipeline (cv2 window)
-│   ├── camera_rgbd.py            # RGBD pipeline with depth + NDI output
-│   ├── camera_ndi.py             # NDI input support
+│   ├── camera.py                 # Thin wrapper → pipelines.coreml + apps.camera
+│   ├── camera_rgbd.py            # Thin wrapper → RGBD pipeline + apps.rgbd
+│   ├── camera_ndi.py             # Thin wrapper → NDI app
+│   ├── camera_lora.py            # Thin wrapper → LoRA pipeline + apps.camera
 │   ├── camera_to_ndi.py          # Basic camera → NDI forwarding (no AI)
-│   ├── camera_lora.py            # LoRA model support
 │   ├── camera_preview.py         # JPEG preview worker (legacy Erlang Port helper)
 │   ├── inference_worker.py       # Headless CoreML worker (legacy Erlang Port helper)
 │   ├── lkg_bridge.py             # Looking Glass holographic display bridge
+│   ├── torch_pipeline.py         # Thin re-export of pipelines.torch
 │   ├── download_loras.py         # LoRA batch downloader from HuggingFace
 │   ├── download_loras_civitai.py # LoRA downloader for Civitai models
 │   ├── streamdiffusion_api.py    # Flask HTTP API for remote control
@@ -85,13 +86,29 @@ Or use the convenience launcher scripts (after setup):
 │   ├── db_init.py                # Database initialization & seed data
 │   ├── tk_style.py               # Window style module (light/dark theme)
 │   ├── DATABASE_GUI_USAGE.md     # Database & GUI integration guide
+│   ├── configs.py                # Central JSON-backed MODEL_CONFIGS / DEFAULT_PROMPTS
 │   ├── requirements.txt
 │   ├── requirements-legacy.txt   # Legacy dependency versions
-│   └── setup.sh
-│   └── scripts/                  # Model conversion scripts
-│       ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML
-│       ├── convert_da3_coreml_v4.py  # Convert DA3-Small to CoreML
-│       └── convert_depth_model.py    # Convert depth models to CoreML
+│   ├── setup.sh
+│   ├── apps/                     # Application / thread loops
+│   │   ├── camera.py             # 3-thread cv2 camera app
+│   │   ├── rgbd.py               # 3-thread RGBD + optional NDI camera app
+│   │   └── ndi.py                # NDI receive → AI → NDI send app
+│   ├── depth/                    # Depth estimation backends
+│   │   └── estimators.py         # CoreML / PyTorch DA3 / DA2 depth estimators
+│   ├── pipelines/                # Inference pipelines
+│   │   ├── coreml.py             # CoreML img2img Pipeline
+│   │   ├── rgbd.py               # RGBD pipeline (CoreML + depth)
+│   │   ├── torch.py              # PyTorch/MPS pipeline with runtime LoRA adapters
+│   │   └── lora.py               # CoreML pipeline with fused SD 1.5 LoRAs
+│   ├── scripts/                  # Model conversion scripts
+│   │   ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML
+│   │   ├── convert_da3_coreml_v4.py  # Convert DA3-Small to CoreML
+│   │   └── convert_depth_model.py    # Convert depth models to CoreML
+│   └── utils/                    # Shared utilities
+│       ├── device.py             # Default torch device helper
+│       ├── ndi.py                # NDI send helpers
+│       └── paths.py              # COREML_DIR / LORAS_DIR constants
 ├── data/                         # SQLite database & app data
 ├── coreml_models/               # Converted CoreML models (generated)
 ├── python/loras/                # Downloaded LoRA models (*.safetensors)
@@ -102,6 +119,8 @@ Or use the convenience launcher scripts (after setup):
 ├── start_ndi_scanner.sh         # Launcher for NDI source scanner GUI
 └── README.md
 ```
+
+The root-level Python scripts (`camera.py`, `camera_rgbd.py`, `camera_ndi.py`, `camera_lora.py`, `torch_pipeline.py`) are now thin wrappers that import the actual implementations from the `python/pipelines/` and `python/apps/` packages. This keeps the entry points stable while making the codebase easier to test and extend.
 
 ## Dependencies
 

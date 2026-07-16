@@ -55,7 +55,8 @@ import numpy as np
 import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from camera import Pipeline, DEFAULT_PROMPTS, MODEL_CONFIGS, COREML_DIR
+from pipelines.coreml import Pipeline, COREML_DIR
+from configs import DEFAULT_PROMPTS, MODEL_CONFIGS
 
 
 def _patch_pipeline_set_prompt():

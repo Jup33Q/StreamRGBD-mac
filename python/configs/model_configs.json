@@ -1,0 +1,20 @@
+{
+  "sdxs": {
+    "model_id": "IDKiro/sdxs-512-0.9",
+    "hidden_size": 1024,
+    "unet_prefix": "unet_sdxs_512",
+    "scheduler": "euler"
+  },
+  "sd-turbo": {
+    "model_id": "stabilityai/sd-turbo",
+    "hidden_size": 1024,
+    "unet_prefix": "unet_sd_turbo",
+    "scheduler": "default"
+  },
+  "sd-1-5": {
+    "model_id": "runwayml/stable-diffusion-v1-5",
+    "hidden_size": 768,
+    "unet_prefix": "unet_sd_1_5",
+    "scheduler": "default"
+  }
+}
