@@ -142,16 +142,21 @@ def main():
                         help="Random seed for fixed noise (changes image texture)")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--coreml-dir", type=str, default=COREML_DIR)
+    _DEPTH_MODELS = [
+        "auto",
+        "da3-small", "da3-base", "da3-large",
+        "da2-small", "da2-base", "da2-large",
+    ]
     parser.add_argument("--depth-model", type=str, default="auto",
-                        choices=["auto", "da3-small", "da2-small"],
+                        choices=_DEPTH_MODELS,
                         help="PyTorch depth model (used when backend is pytorch)")
     parser.add_argument("--depth-backend", type=str, default="auto",
                         choices=["auto", "coreml", "pytorch"],
                         help=("Depth inference backend: auto prefers CoreML, "
                               "then PyTorch DA3, then PyTorch DA2"))
     parser.add_argument("--depth-coreml-path", type=str, default=None,
-                        help="Path to a converted DA3-Small CoreML package "
-                             "(default: <coreml-dir>/da3_small.mlpackage)")
+                        help="Path to a converted CoreML depth model package "
+                             "(default: <coreml-dir>/<depth-model>.mlpackage)")
     parser.add_argument("--depth-preview-mode", type=str, default="mono",
                         choices=["mono", "alpha", "alpha_color", "overlay"],
                         help=("Preview mode for the right pane: "

@@ -107,17 +107,25 @@ python python/scripts/convert_models.py --model sd-turbo-768 --size 768
 
 ### 可选：深度模型（Depth Anything）
 
+项目支持 Depth Anything V3 / V2 的全系变体（small / base / large），均可转换为 CoreML 在 Apple Silicon 上加速。
+
 ```bash
 # Depth Anything V3 CoreML（Apple Silicon 最快，推荐）
-# 参考 README 中的 DA3 CoreML 转换步骤
+python python/scripts/convert_da3_coreml.py --variant small
+python python/scripts/convert_da3_coreml.py --variant base
+python python/scripts/convert_da3_coreml.py --variant large
 
-# Depth Anything V2 Small CoreML
-python python/scripts/convert_da2_coreml.py
+# Depth Anything V2 CoreML
+python python/scripts/convert_da2_coreml.py --variant small
+python python/scripts/convert_da2_coreml.py --variant base
+python python/scripts/convert_da2_coreml.py --variant large
 ```
 
 转换后会在 `./coreml_models/` 生成：
-- `da3_small.mlpackage`
-- `da2_small.mlpackage`
+- `da3_small.mlpackage` / `da3_base.mlpackage` / `da3_large.mlpackage`
+- `da2_small.mlpackage` / `da2_base.mlpackage` / `da2_large.mlpackage`
+
+首次转换时会自动从 HuggingFace 下载对应权重。
 
 ---
 
@@ -177,8 +185,8 @@ python python/db_init.py
 - **Slider 控制**：Strength / Blend / EMA 用滑块控制，实时显示数值
 - **设置持久化**：点击「💾 保存设置」可将当前参数保存到数据库
 - **提示词管理窗口**：点击「📝 提示词管理」浏览和查看三表数据
-- **Output Resolution**：支持 `512x512`、`768x768`、`720x1280` 等，选 `720x1280` 时会以 512 生成后裁切放大
-- **Depth Model**：从数据库加载，当前只保留 `da3-small` 和 `da2-small`，`auto` 后端优先走 CoreML
+- **Output Resolution**：支持 `512x512`、`768x768`、`384x384`、`320x320`
+- **Depth Model**：从数据库加载，支持 DA3/DA2 的 small/base/large，`auto` 后端优先走 CoreML
 
 > 如果数据库未连接，GUI 会自动使用内置 fallback 数据，不影响正常使用。
 
@@ -214,7 +222,7 @@ python python/db_init.py
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--depth-model` | `auto` | 深度模型：`auto` / `da3-small` / `da2-small` |
+| `--depth-model` | `auto` | 深度模型：`auto` / `da3-small` / `da3-base` / `da3-large` / `da2-small` / `da2-base` / `da2-large` |
 | `--depth-backend` | `auto` | 深度后端：`auto` / `coreml` / `pytorch`；`auto` 会优先使用 CoreML |
 | `--depth-coreml-path` | `./coreml_models/da3_small.mlpackage` | 手动指定 CoreML 深度模型路径 |
 | `--depth-preview-mode` | `mono` | 深度预览：`mono` / `alpha` / `alpha_color` / `overlay` |
@@ -383,7 +391,8 @@ python python/camera_rgbd.py --render-size 512
 | `python/models.py` | peewee ORM 模型定义 |
 | `python/db_init.py` | 数据库初始化与种子数据 |
 | `python/scripts/convert_models.py` | CoreML 模型转换（支持 `--size 768`） |
-| `python/scripts/convert_da2_coreml.py` | Depth Anything V2 Small CoreML 转换 |
+| `python/scripts/convert_da3_coreml.py` | Depth Anything V3 small/base/large CoreML 转换 |
+| `python/scripts/convert_da2_coreml.py` | Depth Anything V2 small/base/large CoreML 转换 |
 | `python/scripts/convert_depth_model.py` | 深度模型 CoreML 转换（旧版） |
 | `start_streamrgbd.sh` | 一键启动脚本（RGBD 命令行） |
 | `start_streamrgbd_gui.sh` | GUI 启动脚本（数据库版） |
@@ -420,4 +429,4 @@ python python/camera_rgbd.py \
 
 ---
 
-*手册更新：2026-07-16（新增 720x1280 / 768x768 输出分辨率、da2-small CoreML 支持、sdxs-768/sd-turbo-768 模型选项）*
+*手册更新：2026-07-16（新增 DA3/DA2 small/base/large 全系列 CoreML 支持与数据库配置、方形输出分辨率、sdxs-768/sd-turbo-768 模型选项）*

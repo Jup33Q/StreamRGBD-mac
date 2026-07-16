@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert Depth Anything V2 Small to CoreML .mlpackage.
+Convert Depth Anything V2 variants (small/base/large) to CoreML .mlpackage.
 
 The transformers DA2 model uses bicubic interpolation which coremltools does not
 implement, so we temporarily patch torch.nn.functional.interpolate to bilinear
@@ -8,8 +8,9 @@ mode during tracing. This produces a slightly different but functionally
 equivalent depth model.
 
 Usage:
-    python scripts/convert_da2_coreml.py
-    python scripts/convert_da2_coreml.py --output-dir ./coreml_models
+    python scripts/convert_da2_coreml.py --variant small
+    python scripts/convert_da2_coreml.py --variant base
+    python scripts/convert_da2_coreml.py --variant large --output-dir ./coreml_models
 """
 import os
 import sys
@@ -29,8 +30,17 @@ import numpy as np
 from transformers import pipeline
 
 
+REPO_IDS = {
+    "small": "depth-anything/Depth-Anything-V2-Small-hf",
+    "base": "depth-anything/Depth-Anything-V2-Base-hf",
+    "large": "depth-anything/Depth-Anything-V2-Large-hf",
+}
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Convert DA2-Small to CoreML")
+    parser = argparse.ArgumentParser(description="Convert DA2 variants to CoreML")
+    parser.add_argument("--variant", choices=["small", "base", "large"], default="small",
+                        help="DA2 variant to convert (default: small)")
     parser.add_argument("--output-dir", default="coreml_models",
                         help="Output directory for CoreML model")
     parser.add_argument("--size", type=int, default=504,
@@ -42,9 +52,18 @@ def main():
     output_dir = os.path.join(project_root, args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
+    repo_id = REPO_IDS[args.variant]
+    output_name = f"da2_{args.variant}.mlpackage"
+    save_path = os.path.join(output_dir, output_name)
+
+    if os.path.exists(save_path):
+        print(f"Model already exists at {save_path}, skipping conversion.")
+        return
+
     print("=" * 60)
-    print("CoreML Conversion — Depth Anything V2 Small")
-    print(f"Output: {os.path.abspath(output_dir)}")
+    print(f"CoreML Conversion — Depth Anything V2 {args.variant.upper()}")
+    print(f"Repo: {repo_id}")
+    print(f"Output: {os.path.abspath(save_path)}")
     print("=" * 60)
 
     # Patch bicubic interpolate to bilinear because coremltools does not
@@ -59,10 +78,10 @@ def main():
     F.interpolate = _patched_interpolate
 
     try:
-        print("\n[1/2] Loading DA2-Small from HuggingFace...")
+        print(f"\n[1/2] Loading DA2-{args.variant.upper()} from HuggingFace...")
         pipe = pipeline(
             "depth-estimation",
-            model="depth-anything/Depth-Anything-V2-Small-hf",
+            model=repo_id,
             device=-1,
         )
         model = pipe.model.eval().float().cpu()
@@ -94,7 +113,6 @@ def main():
         )
         print(f"  Converted in {time.time() - t0:.1f}s")
 
-        save_path = os.path.join(output_dir, "da2_small.mlpackage")
         m.save(save_path)
         print(f"  Saved: {save_path}")
 
@@ -105,7 +123,7 @@ def main():
         F.interpolate = _original_interpolate
 
     print("\n" + "=" * 60)
-    print("DA2-Small CoreML conversion complete!")
+    print(f"DA2-{args.variant.upper()} CoreML conversion complete!")
     print("=" * 60)
 
 

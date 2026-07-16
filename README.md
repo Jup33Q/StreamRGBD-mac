@@ -103,8 +103,8 @@ Or use the convenience launcher scripts (after setup):
 │   │   └── lora.py               # CoreML pipeline with fused SD 1.5 LoRAs
 │   ├── scripts/                  # Model conversion scripts
 │   │   ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML (supports --size 768)
-│   │   ├── convert_da3_coreml_v4.py  # Convert DA3-Small to CoreML
-│   │   ├── convert_da2_coreml.py     # Convert DA2-Small to CoreML
+│   │   ├── convert_da3_coreml.py # Convert DA3 small/base/large to CoreML
+│   │   ├── convert_da2_coreml.py # Convert DA2 small/base/large to CoreML
 │   │   └── convert_depth_model.py    # Convert depth models to CoreML (legacy)
 │   └── utils/                    # Shared utilities
 │       ├── device.py             # Default torch device helper
@@ -246,16 +246,23 @@ depth, and the two are concatenated into `H x W x 4` uint8 (RGB + depth as alpha
 
 ### Backends (auto-selected)
 
-1. **CoreML DA3-Small** (recommended on macOS / Apple Silicon) — load `coreml_models/da3_small.mlpackage`.
-2. **CoreML DA2-Small** — load `coreml_models/da2_small.mlpackage` (convert with `convert_da2_coreml.py`).
-3. **PyTorch DA3-Small** — requires the official `depth_anything_3` package.
-4. **PyTorch DA2-Small** — Hugging Face Transformers pipeline, works out-of-the-box on macOS.
+1. **CoreML Depth Anything 3** (recommended on macOS / Apple Silicon) — `da3_small/base/large.mlpackage`.
+2. **CoreML Depth Anything V2** — `da2_small/base/large.mlpackage`.
+3. **PyTorch Depth Anything V3** — requires the official `depth_anything_3` package at `/tmp/depth-anything-3/src`.
+4. **PyTorch Depth Anything V2** — Hugging Face Transformers pipeline, works out-of-the-box on macOS.
+
+Available depth models:
+- `da3-small` / `da3-base` / `da3-large`
+- `da2-small` / `da2-base` / `da2-large`
 
 ### Usage
 
 ```bash
 # Default: auto-selects CoreML -> DA3 PyTorch -> DA2 PyTorch
 python python/camera_rgbd.py --prompt "oil painting style, masterpiece"
+
+# Force a specific CoreML model (requires pre-converted .mlpackage)
+python python/camera_rgbd.py --depth-model da3-base --prompt "oil painting style"
 
 # Force the Transformers V2 model (no extra dependencies)
 python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small --prompt "watercolor"
@@ -273,37 +280,40 @@ python python/camera_rgbd.py --depth-preview-mode alpha_color --prompt "oil pain
 # Cycle preview modes at runtime by pressing `m`
 ```
 
-### Converting DA3-Small to CoreML
+### Converting Depth Anything 3 to CoreML
 
-A built-in conversion script is provided to generate the CoreML `.mlpackage` from the official DA3-SMALL weights:
+A unified conversion script is provided for all DA3 variants. Weights are downloaded automatically from HuggingFace on first use.
 
 ```bash
-# 1. Ensure DA3-SMALL weights are cached by Hugging Face
-#    (they will be downloaded automatically on first use)
+# Small (fastest, default)
+python python/scripts/convert_da3_coreml.py --variant small
 
-# 2. Run the built-in converter
-python python/scripts/convert_da3_coreml_v4.py
+# Base
+python python/scripts/convert_da3_coreml.py --variant base
 
-# 3. The model is saved to coreml_models/da3_small.mlpackage
+# Large (slowest, most accurate)
+python python/scripts/convert_da3_coreml.py --variant large
 ```
 
 Requirements:
 - `depth_anything_3` source must be available at `/tmp/depth-anything-3/src` (clone from [ByteDance-Seed/Depth-Anything-3](https://github.com/ByteDance-Seed/Depth-Anything-3))
-- DA3-SMALL weights cached at `~/.cache/huggingface/hub/models--depth-anything--DA3-SMALL/...`
+- Weights are cached at `~/.cache/huggingface/hub/...`
 
-Once converted, `camera_rgbd.py --depth-backend auto` will automatically load the CoreML model for the fastest depth inference on Apple Silicon.
+Once converted, `camera_rgbd.py --depth-backend auto` will automatically load the requested CoreML model.
 
 > **Note**: The DA3 conversion replaces `bicubic` interpolation (unsupported by CoreML) with `bilinear`, and disables multi-view `alt_start` (single-view depth only). These changes do not affect depth estimation quality for single-image inputs.
 
-### Converting DA2-Small to CoreML
+### Converting Depth Anything V2 to CoreML
 
-A built-in conversion script is provided to generate the CoreML `.mlpackage` from the Hugging Face `depth-anything/Depth-Anything-V2-Small-hf` weights:
+A unified conversion script is provided for all DA2 variants. Weights are downloaded automatically from HuggingFace on first use.
 
 ```bash
-python python/scripts/convert_da2_coreml.py
+python python/scripts/convert_da2_coreml.py --variant small
+python python/scripts/convert_da2_coreml.py --variant base
+python python/scripts/convert_da2_coreml.py --variant large
 ```
 
-The model is saved to `coreml_models/da2_small.mlpackage`. This conversion also replaces `bicubic` interpolation with `bilinear` to ensure CoreML compatibility.
+Models are saved to `coreml_models/da2_<variant>.mlpackage`. This conversion also replaces `bicubic` interpolation with `bilinear` to ensure CoreML compatibility.
 
 ## Output Resolution & Aspect Ratio
 
@@ -312,39 +322,18 @@ The pipeline always generates a square image at `--render-size`, then center-cro
 aspect ratio and upscale to the final resolution. Depth estimation runs on the cropped region.
 
 ```bash
-# 720x1280 vertical/portrait output (9:16), generated at 512 then cropped + upscaled
-python python/camera_rgbd.py --render-size 512 --output-size 720x1280
+# Native 512x512 square output (default, fastest)
+python python/camera_rgbd.py --render-size 512 --output-size 512
 
-# Native 768x768 (requires sdxs-768 CoreML model)
+# Native 768x768 square output (requires sdxs-768 CoreML model)
 python python/camera_rgbd.py --model sdxs-768 --render-size 768 --output-size 768
+
+# Non-square output is still supported from the command line:
+# square render -> center-crop -> upscale to target resolution
+python python/camera_rgbd.py --render-size 512 --output-size 720x1280
 ```
 
 In the database GUI (`stream_rgbd_gui_db.py`), select the desired **Output Resolution** from the dropdown.
-
-The official Depth Anything 3 package is not yet easy to install on macOS, but a
-community CoreML converter is available:
-
-```bash
-# 1. Clone the converter and the DA3-SMALL weights
-git clone https://github.com/LSQzzx/Depth-Anything-3-for-CoreML.git
-cd Depth-Anything-3-for-CoreML
-
-# 2. Install uv and git-lfs if needed
-brew install uv git-lfs
-git lfs install
-
-# 3. Download weights
-git clone https://huggingface.co/depth-anything/DA3-SMALL
-
-# 4. Convert
-uv sync
-uv run coreml_converter/convert2coreml.py
-
-# 5. Copy the result into this project
-cp da3.mlpackage /path/to/StreamRGBD-mac/coreml_models/da3_small.mlpackage
-```
-
-Then run `python python/camera_rgbd.py` and it will load the CoreML depth model automatically.
 
 ## NDI Output
 
@@ -392,9 +381,8 @@ python python/db_init.py
 
 Features:
 - **Prompt builder**: split into Style / Subject / Quality fields, auto-joined with commas
-- **LoRA stack**: select Style / Subject / Quality LoRAs with independent weight sliders
-- **Output Resolution**: choose `512x512`, `768x768`, `720x1280`, etc.
-- **Depth Model**: choose `da3-small` or `da2-small`; `auto` backend prefers CoreML
+- **Output Resolution**: choose `512x512`, `768x768`, `384x384`, `320x320`
+- **Depth Model**: choose from DA3/DA2 small/base/large; `auto` backend prefers CoreML
 - **Settings persistence**: save and restore parameters from SQLite
 - **Runtime updates**: change prompt / seed while the pipeline is running
 

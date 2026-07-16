@@ -3,9 +3,9 @@
 Depth estimation backends for the RGBD pipeline.
 
 Supports:
-  1. CoreML Depth Anything 3 Small (pre-converted .mlpackage)
-  2. PyTorch Depth Anything V3 Small
-  3. PyTorch Depth Anything V2 Small (Hugging Face transformers)
+  - CoreML Depth Anything 3 / V2 (pre-converted .mlpackage)
+  - PyTorch Depth Anything V3 (all variants)
+  - PyTorch Depth Anything V2 (all Hugging Face variants)
 """
 
 import os
@@ -29,7 +29,7 @@ def normalize_depth(depth):
 
 
 class CoreMLDepthEstimator:
-    """Depth Anything 3 Small running as a CoreML model (macOS/Apple Silicon)."""
+    """Depth Anything 3 / V2 running as a CoreML model (macOS/Apple Silicon)."""
 
     INPUT_SIZE = 504
     IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
@@ -99,8 +99,17 @@ class CoreMLDepthEstimator:
 class TorchDepthEstimator:
     """Depth Anything V3/V2 via PyTorch / Transformers."""
 
-    DA3_NAME = "depth-anything/DA3-SMALL"
-    DA2_NAME = "depth-anything/Depth-Anything-V2-Small-hf"
+    # Mapping from our short names to HuggingFace repo ids.
+    DA3_NAMES = {
+        "da3-small": "depth-anything/DA3-SMALL",
+        "da3-base": "depth-anything/DA3-BASE",
+        "da3-large": "depth-anything/DA3-LARGE",
+    }
+    DA2_NAMES = {
+        "da2-small": "depth-anything/Depth-Anything-V2-Small-hf",
+        "da2-base": "depth-anything/Depth-Anything-V2-Base-hf",
+        "da2-large": "depth-anything/Depth-Anything-V2-Large-hf",
+    }
 
     def __init__(self, model_name, device):
         self.device = device
@@ -108,9 +117,9 @@ class TorchDepthEstimator:
         self._pipe = None
         self._da3_model = None
 
-        if model_name == "da3-small":
+        if model_name.startswith("da3-"):
             self._load_da3()
-        elif model_name == "da2-small":
+        elif model_name.startswith("da2-"):
             self._load_da2()
         else:
             raise ValueError(f"Unknown PyTorch depth model: {model_name}")
@@ -134,6 +143,10 @@ class TorchDepthEstimator:
             return False
 
     def _load_da3(self):
+        repo_id = self.DA3_NAMES.get(self.model_name)
+        if repo_id is None:
+            raise ValueError(f"Unknown DA3 model: {self.model_name}")
+
         # Same path+stub setup as _da3_available in case init order differs.
         DA3_SRC = "/tmp/depth-anything-3/src"
         if os.path.isdir(DA3_SRC) and DA3_SRC not in sys.path:
@@ -151,21 +164,24 @@ class TorchDepthEstimator:
         if device == "mps":
             print("  [DA3] MPS device has compatibility issues; using CPU for depth estimation.")
             device = "cpu"
-        self._da3_model = DepthAnything3.from_pretrained(self.DA3_NAME).to(device)
+        self._da3_model = DepthAnything3.from_pretrained(repo_id).to(device)
         self._da3_model.eval()
 
     def _load_da2(self):
+        repo_id = self.DA2_NAMES.get(self.model_name)
+        if repo_id is None:
+            raise ValueError(f"Unknown DA2 model: {self.model_name}")
         from transformers import pipeline
         self._pipe = pipeline(
             "depth-estimation",
-            model=self.DA2_NAME,
+            model=repo_id,
             device=self.device,
         )
 
     def estimate(self, rgb_np):
         """Estimate depth for a single RGB uint8 image."""
         h, w = rgb_np.shape[:2]
-        if self.model_name == "da3-small":
+        if self.model_name.startswith("da3-"):
             depth = self._estimate_da3(rgb_np)
         else:
             depth = self._estimate_da2(rgb_np)
@@ -190,28 +206,36 @@ class TorchDepthEstimator:
 class DepthEstimator:
     """Picks the best available depth estimator for the current platform."""
 
+    # Model family used when auto-selecting CoreML.
+    _DA3_MODELS = ("da3-small", "da3-base", "da3-large")
+    _DA2_MODELS = ("da2-small", "da2-base", "da2-large")
+
     def __init__(self, model_name="auto", backend="auto", coreml_path=None, device=None):
         self.device = device or default_device()
 
         # Resolve CoreML model path based on requested model.
         if coreml_path is None:
-            if model_name == "da2-small":
-                coreml_path = os.path.join(COREML_DIR, "da2_small.mlpackage")
+            if model_name in self._DA2_MODELS:
+                coreml_path = os.path.join(COREML_DIR, f"{model_name.replace('-', '_')}.mlpackage")
+            elif model_name in self._DA3_MODELS:
+                coreml_path = os.path.join(COREML_DIR, f"{model_name.replace('-', '_')}.mlpackage")
             else:
+                # auto or unknown -> default to da3_small
                 coreml_path = os.path.join(COREML_DIR, "da3_small.mlpackage")
 
         # Auto-select backend.
         if backend == "auto":
             if os.path.exists(coreml_path):
                 backend = "coreml"
-            elif model_name in ("auto", "da3-small") and TorchDepthEstimator._da3_available():
+            elif model_name in ("auto",) + self._DA3_MODELS and TorchDepthEstimator._da3_available():
                 backend = "pytorch"
-                model_name = "da3-small"
+                if model_name == "auto":
+                    model_name = "da3-small"
             else:
                 backend = "pytorch"
                 if model_name == "auto":
                     print("  Depth Anything V3/CoreML not found; using Depth Anything V2 Small.")
-                model_name = "da2-small"
+                    model_name = "da2-small"
 
         self.backend = backend
         self.model_name = model_name
