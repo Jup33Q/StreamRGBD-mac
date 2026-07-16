@@ -102,9 +102,10 @@ Or use the convenience launcher scripts (after setup):
 │   │   ├── torch.py              # PyTorch/MPS pipeline with runtime LoRA adapters
 │   │   └── lora.py               # CoreML pipeline with fused SD 1.5 LoRAs
 │   ├── scripts/                  # Model conversion scripts
-│   │   ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML
+│   │   ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML (supports --size 768)
 │   │   ├── convert_da3_coreml_v4.py  # Convert DA3-Small to CoreML
-│   │   └── convert_depth_model.py    # Convert depth models to CoreML
+│   │   ├── convert_da2_coreml.py     # Convert DA2-Small to CoreML
+│   │   └── convert_depth_model.py    # Convert depth models to CoreML (legacy)
 │   └── utils/                    # Shared utilities
 │       ├── device.py             # Default torch device helper
 │       ├── ndi.py                # NDI send helpers
@@ -228,6 +229,10 @@ python python/scripts/convert_models.py
 # Convert SD-Turbo
 python python/scripts/convert_models.py --model sd-turbo
 
+# Convert 768 resolution models (slower, requires more memory)
+python python/scripts/convert_models.py --model sdxs-768 --size 768
+python python/scripts/convert_models.py --model sd-turbo-768 --size 768
+
 # Custom output directory
 python python/scripts/convert_models.py --output-dir ./my_models
 python python/camera.py --coreml-dir ./my_models
@@ -241,9 +246,10 @@ depth, and the two are concatenated into `H x W x 4` uint8 (RGB + depth as alpha
 
 ### Backends (auto-selected)
 
-1. **CoreML DA3-Small** (recommended on macOS / Apple Silicon) — load a pre-converted `.mlpackage`.
-2. **PyTorch DA3-Small** — requires the official `depth_anything_3` package.
-3. **PyTorch DA2-Small** — Hugging Face Transformers pipeline, works out-of-the-box on macOS.
+1. **CoreML DA3-Small** (recommended on macOS / Apple Silicon) — load `coreml_models/da3_small.mlpackage`.
+2. **CoreML DA2-Small** — load `coreml_models/da2_small.mlpackage` (convert with `convert_da2_coreml.py`).
+3. **PyTorch DA3-Small** — requires the official `depth_anything_3` package.
+4. **PyTorch DA2-Small** — Hugging Face Transformers pipeline, works out-of-the-box on macOS.
 
 ### Usage
 
@@ -287,7 +293,33 @@ Requirements:
 
 Once converted, `camera_rgbd.py --depth-backend auto` will automatically load the CoreML model for the fastest depth inference on Apple Silicon.
 
-> **Note**: The conversion replaces `bicubic` interpolation (unsupported by CoreML) with `bilinear`, and disables multi-view `alt_start` (single-view depth only). These changes do not affect depth estimation quality for single-image inputs.
+> **Note**: The DA3 conversion replaces `bicubic` interpolation (unsupported by CoreML) with `bilinear`, and disables multi-view `alt_start` (single-view depth only). These changes do not affect depth estimation quality for single-image inputs.
+
+### Converting DA2-Small to CoreML
+
+A built-in conversion script is provided to generate the CoreML `.mlpackage` from the Hugging Face `depth-anything/Depth-Anything-V2-Small-hf` weights:
+
+```bash
+python python/scripts/convert_da2_coreml.py
+```
+
+The model is saved to `coreml_models/da2_small.mlpackage`. This conversion also replaces `bicubic` interpolation with `bilinear` to ensure CoreML compatibility.
+
+## Output Resolution & Aspect Ratio
+
+`--output-size` accepts either a single integer (square) or a `WxH` string for non-square output.
+The pipeline always generates a square image at `--render-size`, then center-crops to the target
+aspect ratio and upscale to the final resolution. Depth estimation runs on the cropped region.
+
+```bash
+# 720x1280 vertical/portrait output (9:16), generated at 512 then cropped + upscaled
+python python/camera_rgbd.py --render-size 512 --output-size 720x1280
+
+# Native 768x768 (requires sdxs-768 CoreML model)
+python python/camera_rgbd.py --model sdxs-768 --render-size 768 --output-size 768
+```
+
+In the database GUI (`stream_rgbd_gui_db.py`), select the desired **Output Resolution** from the dropdown.
 
 The official Depth Anything 3 package is not yet easy to install on macOS, but a
 community CoreML converter is available:
@@ -345,6 +377,26 @@ For basic camera capture without AI processing, use `camera_to_ndi.py`:
 ```
 
 ## GUI Tools
+
+### Stream RGBD Database GUI
+
+The recommended way to run the pipeline is through the database-enhanced GUI:
+
+```bash
+# Initialize database (first time only)
+python python/db_init.py
+
+# Launch GUI
+./start_streamrgbd_gui.sh
+```
+
+Features:
+- **Prompt builder**: split into Style / Subject / Quality fields, auto-joined with commas
+- **LoRA stack**: select Style / Subject / Quality LoRAs with independent weight sliders
+- **Output Resolution**: choose `512x512`, `768x768`, `720x1280`, etc.
+- **Depth Model**: choose `da3-small` or `da2-small`; `auto` backend prefers CoreML
+- **Settings persistence**: save and restore parameters from SQLite
+- **Runtime updates**: change prompt / seed while the pipeline is running
 
 ### LoRA Downloader
 

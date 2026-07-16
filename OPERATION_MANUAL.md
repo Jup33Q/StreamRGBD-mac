@@ -97,6 +97,10 @@ python python/scripts/convert_models.py
 
 # 或转换 SD-Turbo
 python python/scripts/convert_models.py --model sd-turbo
+
+# 768 分辨率模型（需要原模型支持 768 分辨率，转换更慢）
+python python/scripts/convert_models.py --model sdxs-768 --size 768
+python python/scripts/convert_models.py --model sd-turbo-768 --size 768
 ```
 
 转换后的模型保存在 `./coreml_models/` 目录。
@@ -104,12 +108,16 @@ python python/scripts/convert_models.py --model sd-turbo
 ### 可选：深度模型（Depth Anything）
 
 ```bash
-# 方案 A：Depth Anything V2（PyTorch，开箱即用）
-# 无需额外操作，运行时自动下载
-
-# 方案 B：Depth Anything V3 CoreML（Apple Silicon 最快）
+# Depth Anything V3 CoreML（Apple Silicon 最快，推荐）
 # 参考 README 中的 DA3 CoreML 转换步骤
+
+# Depth Anything V2 Small CoreML
+python python/scripts/convert_da2_coreml.py
 ```
+
+转换后会在 `./coreml_models/` 生成：
+- `da3_small.mlpackage`
+- `da2_small.mlpackage`
 
 ---
 
@@ -169,6 +177,8 @@ python python/db_init.py
 - **Slider 控制**：Strength / Blend / EMA 用滑块控制，实时显示数值
 - **设置持久化**：点击「💾 保存设置」可将当前参数保存到数据库
 - **提示词管理窗口**：点击「📝 提示词管理」浏览和查看三表数据
+- **Output Resolution**：支持 `512x512`、`768x768`、`720x1280` 等，选 `720x1280` 时会以 512 生成后裁切放大
+- **Depth Model**：从数据库加载，当前只保留 `da3-small` 和 `da2-small`，`auto` 后端优先走 CoreML
 
 > 如果数据库未连接，GUI 会自动使用内置 fallback 数据，不影响正常使用。
 
@@ -190,9 +200,9 @@ python python/db_init.py
 |------|--------|------|
 | `--prompt` | `oil painting style, masterpiece` | AI 风格提示词 |
 | `--prompts` | `false` | 使用内置 10 组提示词画廊 |
-| `--model` | `sdxs` | 模型：`sdxs` / `sd-turbo` |
-| `--render-size` | `512` | 推理分辨率：320 / 384 / 512 |
-| `--output-size` | `512` | 输出分辨率 |
+| `--model` | `sdxs` | 模型：`sdxs` / `sdxs-768` / `sd-turbo` / `sd-turbo-768` / `sd-1-5` |
+| `--render-size` | `512` | 推理分辨率：320 / 384 / 512 / 768 |
+| `--output-size` | `512` | 输出分辨率，支持整数（正方形）或 `WxH`（如 `720x1280`） |
 | `--strength` | `0.5` | 去噪强度（0.1-1.0） |
 | `--blend` | `0.0` | 摄像头混合比例（0=纯AI） |
 | `--ema` | `0.4` | EMA 平滑系数 |
@@ -205,8 +215,8 @@ python python/db_init.py
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--depth-model` | `auto` | 深度模型：`auto` / `da3-small` / `da2-small` |
-| `--depth-backend` | `auto` | 深度后端：`auto` / `coreml` / `pytorch` |
-| `--depth-coreml-path` | `./coreml_models/da3_small.mlpackage` | CoreML 深度模型路径 |
+| `--depth-backend` | `auto` | 深度后端：`auto` / `coreml` / `pytorch`；`auto` 会优先使用 CoreML |
+| `--depth-coreml-path` | `./coreml_models/da3_small.mlpackage` | 手动指定 CoreML 深度模型路径 |
 | `--depth-preview-mode` | `mono` | 深度预览：`mono` / `alpha` / `alpha_color` / `overlay` |
 
 ### 5.3 示例命令
@@ -229,6 +239,12 @@ python python/camera_rgbd.py --depth-preview-mode overlay
 
 # 强制使用 PyTorch DA2（无 CoreML 深度模型时）
 python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small
+
+# 720x1280 竖屏输出（512 生成后裁切放大）
+python python/camera_rgbd.py --render-size 512 --output-size 720x1280
+
+# 768x768 高分辨率输出（需要转换 sdxs-768 CoreML 模型）
+python python/camera_rgbd.py --model sdxs-768 --render-size 768 --output-size 768
 ```
 
 ---
@@ -279,7 +295,7 @@ python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small
 3. **加噪**：固定种子噪声，保持时间连贯性
 4. **UNet 推理**：单步去噪（CoreML，~24ms for SDXS）
 5. **VAE 解码**：隐空间 → 图像（CoreML TAESD，~5ms）
-6. **后处理**：反归一化，缩放，显示
+6. **后处理**：反归一化；若输出为 `WxH` 非正方形，则居中裁切到目标比例并放大到目标分辨率；最后显示
 
 ### 7.3 时间连贯性机制
 
@@ -307,7 +323,8 @@ python python/camera_rgbd.py --depth-backend pytorch --depth-model da2-small
 | 模型加载慢 | 首次运行需编译 CoreML | 等待 30-180 秒，属于正常 |
 | 帧率低 | 硬件性能不足 | 降低 `--render-size` 到 384 或 320 |
 | 画面闪烁 | 反馈参数不合适 | 增加 `--feedback` 到 0.2-0.3 |
-| 深度图未输出 | 深度模型未安装 | 使用 `--depth-backend=pytorch --depth-model da2-small` |
+| 深度图未输出 | 深度模型未安装 | 运行 `python python/scripts/convert_da2_coreml.py` 或临时使用 `--depth-backend=pytorch --depth-model da2-small` |
+| 选 `sdxs-768` 报错 | 未转换 768 CoreML 模型 | 运行 `python python/scripts/convert_models.py --model sdxs-768 --size 768` |
 | 窗口无法显示 | 无 GUI 环境 | 在 Terminal.app 中运行，而非后台/SSH |
 | **数据库初始化失败** | peewee 未安装 | `source .venv/bin/activate && pip install peewee` |
 | **数据库表不存在** | 未运行 db_init.py | `python python/db_init.py` |
@@ -365,8 +382,9 @@ python python/camera_rgbd.py --render-size 512
 | `python/stream_rgbd_gui_db.py` | **数据库增强版 GUI**（peewee + SQLite） |
 | `python/models.py` | peewee ORM 模型定义 |
 | `python/db_init.py` | 数据库初始化与种子数据 |
-| `python/scripts/convert_models.py` | CoreML 模型转换 |
-| `python/scripts/convert_depth_model.py` | 深度模型 CoreML 转换 |
+| `python/scripts/convert_models.py` | CoreML 模型转换（支持 `--size 768`） |
+| `python/scripts/convert_da2_coreml.py` | Depth Anything V2 Small CoreML 转换 |
+| `python/scripts/convert_depth_model.py` | 深度模型 CoreML 转换（旧版） |
 | `start_streamrgbd.sh` | 一键启动脚本（RGBD 命令行） |
 | `start_streamrgbd_gui.sh` | GUI 启动脚本（数据库版） |
 | `start_download_loras.sh` | HuggingFace LoRA 批量下载脚本 |
@@ -402,4 +420,4 @@ python python/camera_rgbd.py \
 
 ---
 
-*手册更新：2026-07-15（新增 peewee/SQLite 数据库增强版 GUI，支持三表拆分提示词、Slider 控制、设置持久化）*
+*手册更新：2026-07-16（新增 720x1280 / 768x768 输出分辨率、da2-small CoreML 支持、sdxs-768/sd-turbo-768 模型选项）*

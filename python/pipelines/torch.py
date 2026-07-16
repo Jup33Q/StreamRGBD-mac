@@ -347,8 +347,11 @@ class TorchRGBDPipeline(TorchPipeline):
     """PyTorch pipeline extended with RGBD output."""
 
     def __init__(self, depth_model="auto", depth_backend="auto",
-                 depth_coreml_path=None, *args, **kwargs):
+                 depth_coreml_path=None, output_width=None, output_height=None,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.output_width = output_width or self.output_size
+        self.output_height = output_height or self.output_size
         print("\n--- Loading Depth Estimator ---")
         self.depth_estimator = DepthEstimator(
             model_name=depth_model,
@@ -358,8 +361,19 @@ class TorchRGBDPipeline(TorchPipeline):
 
     def process_frame_rgbd(self, frame_bgr):
         """Run img2img + depth estimation and return RGB, depth, and RGBD."""
+        from pipelines.rgbd import _crop_to_aspect_no_resize
         result_bgr = self.process_frame(frame_bgr)
-        rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
-        depth_u8 = self.depth_estimator.estimate(rgb)
+
+        if self.output_width != self.output_height:
+            cropped_bgr = _crop_to_aspect_no_resize(result_bgr, self.output_width, self.output_height)
+            rgb = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2RGB)
+            depth_u8 = self.depth_estimator.estimate(rgb)
+            result_bgr = cv2.resize(cropped_bgr, (self.output_width, self.output_height), interpolation=cv2.INTER_LANCZOS4)
+            rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+            depth_u8 = cv2.resize(depth_u8, (self.output_width, self.output_height), interpolation=cv2.INTER_LINEAR)
+        else:
+            rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+            depth_u8 = self.depth_estimator.estimate(rgb)
+
         rgbd = np.concatenate([rgb, depth_u8[:, :, np.newaxis]], axis=2)
         return result_bgr, depth_u8, rgbd

@@ -5,11 +5,25 @@
     "unet_prefix": "unet_sdxs_512",
     "scheduler": "euler"
   },
+  "sdxs-768": {
+    "model_id": "IDKiro/sdxs-512-0.9",
+    "hidden_size": 1024,
+    "unet_prefix": "unet_sdxs_768",
+    "scheduler": "euler",
+    "render_size": 768
+  },
   "sd-turbo": {
     "model_id": "stabilityai/sd-turbo",
     "hidden_size": 1024,
     "unet_prefix": "unet_sd_turbo",
     "scheduler": "default"
+  },
+  "sd-turbo-768": {
+    "model_id": "stabilityai/sd-turbo",
+    "hidden_size": 1024,
+    "unet_prefix": "unet_sd_turbo_768",
+    "scheduler": "default",
+    "render_size": 768
   },
   "sd-1-5": {
     "model_id": "runwayml/stable-diffusion-v1-5",

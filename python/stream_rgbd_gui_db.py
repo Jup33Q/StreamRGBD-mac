@@ -354,11 +354,16 @@ class StreamRGBDGUIDB:
         self.combo_model.pack(anchor=tk.W, pady=(0, 8))
 
         # ------------------------------------------------------------------
-        # --- Render Size ---
+        # --- Output Resolution ---
         # ------------------------------------------------------------------
-        ttk.Label(left, text="Render Size:").pack(anchor=tk.W, pady=(0, 2))
-        self.combo_render = ttk.Combobox(left, values=[320, 384, 512], state="readonly", width=20)
-        self.combo_render.set(512)
+        ttk.Label(left, text="Output Resolution:").pack(anchor=tk.W, pady=(0, 2))
+        self.combo_render = ttk.Combobox(
+            left,
+            values=["512x512", "768x768", "384x384", "320x320", "720x1280"],
+            state="readonly",
+            width=20,
+        )
+        self.combo_render.set("512x512")
         self.combo_render.pack(anchor=tk.W, pady=(0, 8))
 
         # ------------------------------------------------------------------
@@ -1081,7 +1086,12 @@ class StreamRGBDGUIDB:
 
             render = AppSettings.get_value("render_size")
             if render:
-                self.combo_render.set(render)
+                # Backward-compat: old integer values like "512" -> "512x512"
+                render = str(render).strip()
+                if "x" not in render and render in ("320", "384", "512"):
+                    render = f"{render}x{render}"
+                if render in self.combo_render["values"]:
+                    self.combo_render.set(render)
 
             depth_backend = AppSettings.get_value("depth_backend")
             if depth_backend:
@@ -1179,11 +1189,22 @@ class StreamRGBDGUIDB:
         # 从 combobox 值中提取模型名称
         model_val = self.combo_model.get()
         model_name = model_val.split(" ")[0] if " " in model_val else model_val
-        args.append(f"--model {model_name}")
+        args.append(f"--model {shlex.quote(model_name)}")
 
-        args.append(f"--render-size {self.combo_render.get()}")
-        args.append(f"--depth-backend {self.combo_depth.get()}")
-        args.append(f"--depth-model {self.combo_depth_model.get()}")
+        # Parse output resolution: "512x512" -> render-size + output-size, "720x1280" -> render-size 512 + output-size 720x1280
+        res_val = self.combo_render.get()
+        if res_val == "720x1280":
+            args.append("--render-size 512")
+            args.append("--output-size 720x1280")
+        else:
+            size = res_val.split("x")[0] if "x" in res_val else res_val
+            args.append(f"--render-size {shlex.quote(size)}")
+            args.append(f"--output-size {shlex.quote(size)}")
+
+        args.append(f"--depth-backend {shlex.quote(self.combo_depth.get())}")
+        depth_model_val = self.combo_depth_model.get()
+        depth_model_name = depth_model_val.split(" ")[0] if " " in depth_model_val else depth_model_val
+        args.append(f"--depth-model {shlex.quote(depth_model_name)}")
         args.append(f"--strength {self.slider_strength.get():.2f}")
         args.append(f"--blend {self.slider_blend.get():.2f}")
         args.append(f"--ema {self.slider_ema.get():.2f}")

@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 
 from utils.ndi import _check_ndi, _create_ndi_sender, _send_ndi
+from pipelines.rgbd import _crop_to_aspect
 
 
 class RGBDCameraApp:
@@ -18,7 +19,8 @@ class RGBDCameraApp:
     PREVIEW_MODES = ["mono", "alpha", "alpha_color", "overlay"]
 
     def __init__(self, pipeline, camera_id=0, blend_ratio=0.0, ema_alpha=0.85,
-                 depth_preview_mode="mono", ndi_output_name=None):
+                 depth_preview_mode="mono", ndi_output_name=None,
+                 output_width=None, output_height=None):
         self.pipeline = pipeline
         self.camera_id = camera_id
         self.blend_ratio = blend_ratio
@@ -30,6 +32,8 @@ class RGBDCameraApp:
         self.ndi_output_name = ndi_output_name
         self._color_sender = None
         self._depth_sender = None
+        self.output_width = output_width or getattr(pipeline, "output_width", pipeline.output_size)
+        self.output_height = output_height or getattr(pipeline, "output_height", pipeline.output_size)
 
         self._frame_lock = threading.Lock()
         self._latest_frame = None
@@ -156,8 +160,9 @@ class RGBDCameraApp:
             cap.release()
             return
 
-        out_sz = self.pipeline.output_size
+        out_w, out_h = self.output_width, self.output_height
         print(f"Camera: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+        print(f"Output: {out_w}x{out_h}")
         print(f"Blend: {self.blend_ratio:.1f} (0=AI only, 1=camera only)")
         print(f"EMA: {self.ema_alpha:.2f}")
         print(f"Depth preview: {self.depth_preview_mode} (mono/alpha/alpha_color/overlay)")
@@ -180,7 +185,7 @@ class RGBDCameraApp:
 
         win = f"StreamDiffusion-RGBD ({self.pipeline.model_name} {self.pipeline.render_size})"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(win, out_sz * 2 + 20, out_sz)
+        cv2.resizeWindow(win, out_w * 2 + 20, out_h)
 
         display_count = 0
         total_start = time.perf_counter()
@@ -201,17 +206,8 @@ class RGBDCameraApp:
                 time.sleep(0.001)
                 continue
 
-            # Camera preview (square crop)
-            h, w = frame.shape[:2]
-            if w > h:
-                off = (w - h) // 2
-                fsq = frame[:, off:off + h]
-            elif h > w:
-                off = (h - w) // 2
-                fsq = frame[off:off + w, :]
-            else:
-                fsq = frame
-            cam_display = cv2.resize(fsq, (out_sz, out_sz))
+            # Camera preview: crop to the same aspect ratio as the output.
+            cam_display = _crop_to_aspect(frame, out_w, out_h)
 
             if ai_result is not None:
                 if self._ema_result is None:
@@ -260,10 +256,10 @@ class RGBDCameraApp:
             cv2.putText(display, ptext,
                         (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1)
             cv2.putText(display, "AI Output",
-                        (out_sz // 2 - 55, out_sz - 10),
+                        (out_w // 2 - 55, out_h - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
             cv2.putText(display, f"Depth ({self.depth_preview_mode})",
-                        (out_sz + out_sz // 2 - 65, out_sz - 10),
+                        (out_w + out_w // 2 - 65, out_h - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
             cv2.imshow(win, display)

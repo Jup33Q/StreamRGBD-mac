@@ -55,7 +55,8 @@ class CoreMLDepthEstimator:
         self.out_name = out_feat.name
         in_shape = list(in_feat.type.multiArrayType.shape)
         out_shape = list(out_feat.type.multiArrayType.shape)
-        print(f"    Input : {self.in_name} -> {in_shape}")
+        self._input_rank = len(in_shape)
+        print(f"    Input : {self.in_name} -> {in_shape} (rank {self._input_rank})")
         print(f"    Output: {self.out_name} -> {out_shape}")
 
     def estimate(self, rgb_np):
@@ -74,8 +75,12 @@ class CoreMLDepthEstimator:
         # 2. ImageNet normalization.
         normalized = (padded - self.IMAGENET_MEAN) / self.IMAGENET_STD
 
-        # 3. Add batch dims expected by the traced DA3 model: (1, 1, 3, H, W).
-        x = np.ascontiguousarray(normalized.transpose(2, 0, 1)[None, None])
+        # 3. Add batch dims expected by the model (DA3: 5D, DA2: 4D).
+        transposed = normalized.transpose(2, 0, 1)
+        if self._input_rank == 5:
+            x = np.ascontiguousarray(transposed[None, None])
+        else:
+            x = np.ascontiguousarray(transposed[None])
 
         # 4. CoreML inference.
         pred = self.model.predict({self.in_name: x})
@@ -188,9 +193,12 @@ class DepthEstimator:
     def __init__(self, model_name="auto", backend="auto", coreml_path=None, device=None):
         self.device = device or default_device()
 
-        # Resolve default CoreML model path.
+        # Resolve CoreML model path based on requested model.
         if coreml_path is None:
-            coreml_path = os.path.join(COREML_DIR, "da3_small.mlpackage")
+            if model_name == "da2-small":
+                coreml_path = os.path.join(COREML_DIR, "da2_small.mlpackage")
+            else:
+                coreml_path = os.path.join(COREML_DIR, "da3_small.mlpackage")
 
         # Auto-select backend.
         if backend == "auto":

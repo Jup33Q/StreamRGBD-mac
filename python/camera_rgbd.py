@@ -98,6 +98,24 @@ def _resolve_lora_path(path, project_dir):
     return path
 
 
+def _parse_output_size(value):
+    """Parse --output-size as an int (square) or 'WxH' string."""
+    value = str(value).strip().lower()
+    if "x" in value:
+        parts = value.split("x")
+        if len(parts) != 2:
+            raise argparse.ArgumentTypeError(f"Invalid output size: {value!r}. Use 'WxH' or an integer.")
+        try:
+            return int(parts[0]), int(parts[1])
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"Invalid output size: {value!r}. Use 'WxH' or an integer.") from exc
+    try:
+        size = int(value)
+        return size, size
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid output size: {value!r}. Use 'WxH' or an integer.") from exc
+
+
 def main():
     parser = argparse.ArgumentParser(description="StreamDiffusion for Mac — RGBD Output")
     parser.add_argument("--prompt", type=str, default="oil painting style, masterpiece, highly detailed")
@@ -106,8 +124,13 @@ def main():
     parser.add_argument("--model", type=str, default="sdxs", choices=list(MODEL_CONFIGS.keys()),
                         help="Model to use (default: sdxs for best performance). "
                              "When --lora is used, the pipeline auto-switches to sd-1-5.")
-    parser.add_argument("--render-size", type=int, default=512, choices=[320, 384, 512])
-    parser.add_argument("--output-size", type=int, default=512)
+    parser.add_argument("--render-size", type=int, default=512, choices=[320, 384, 512, 768])
+    parser.add_argument("--output-size", type=str, default="512",
+                        help="Output resolution: integer (square) or WxH (e.g. 720x1280).")
+    parser.add_argument("--output-width", type=int, default=None,
+                        help="Override output width (default: derived from --output-size).")
+    parser.add_argument("--output-height", type=int, default=None,
+                        help="Override output height (default: derived from --output-size).")
     parser.add_argument("--strength", type=float, default=0.5)
     parser.add_argument("--blend", type=float, default=0.0,
                         help="Camera blend (0.0=AI only, 0.3=30%% camera)")
@@ -148,8 +171,15 @@ def main():
                         help="Category for each --lora (style/subject/quality)")
     args = parser.parse_args()
 
+    output_width, output_height = _parse_output_size(args.output_size)
+    if args.output_width is not None:
+        output_width = args.output_width
+    if args.output_height is not None:
+        output_height = args.output_height
+
     print("=" * 60)
     print(f"StreamDiffusion for Mac — RGBD Output ({args.model} {args.render_size}x{args.render_size})")
+    print(f"  Output resolution: {output_width}x{output_height}")
     print("  CoreML img2img + Depth Anything RGBD generation")
     print("=" * 60)
 
@@ -181,7 +211,9 @@ def main():
             depth_coreml_path=args.depth_coreml_path,
             model_name=args.model,
             render_size=args.render_size,
-            output_size=args.output_size,
+            output_size=output_width if output_width == output_height else args.render_size,
+            output_width=output_width,
+            output_height=output_height,
             prompt=args.prompt,
             strength=args.strength,
             prompts=prompts,
@@ -196,7 +228,9 @@ def main():
             depth_coreml_path=args.depth_coreml_path,
             model_name=args.model,
             render_size=args.render_size,
-            output_size=args.output_size,
+            output_size=output_width if output_width == output_height else args.render_size,
+            output_width=output_width,
+            output_height=output_height,
             prompt=args.prompt,
             strength=args.strength,
             prompts=prompts,
@@ -212,6 +246,8 @@ def main():
         ema_alpha=args.ema,
         depth_preview_mode=args.depth_preview_mode,
         ndi_output_name=args.ndi_output,
+        output_width=output_width,
+        output_height=output_height,
     )
     app.run()
 

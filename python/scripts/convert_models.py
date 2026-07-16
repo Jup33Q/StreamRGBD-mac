@@ -43,7 +43,7 @@ MODEL_CONFIGS = {
 }
 
 
-def convert_unet(model_id, hidden_size, save_path):
+def convert_unet(model_id, hidden_size, save_path, size=512):
     """Convert UNet to CoreML."""
     from diffusers import StableDiffusionPipeline
 
@@ -72,11 +72,12 @@ def convert_unet(model_id, hidden_size, save_path):
 
     wrapper = UNetWrapper(unet).eval()
 
-    sample = torch.randn(1, 4, 64, 64)
+    latent_size = size // 8
+    sample = torch.randn(1, 4, latent_size, latent_size)
     timestep = torch.tensor([999.0])
     hidden_states = torch.randn(1, 77, hidden_size)
 
-    print("  Tracing UNet...")
+    print(f"  Tracing UNet at {size}x{size} (latent {latent_size}x{latent_size})...")
     with torch.no_grad():
         traced = torch.jit.trace(wrapper, (sample, timestep, hidden_states))
 
@@ -198,7 +199,9 @@ def main():
     parser.add_argument("--output-dir", default="coreml_models",
                         help="Output directory for CoreML models")
     parser.add_argument("--model", default="sdxs", choices=list(MODEL_CONFIGS.keys()),
-                        help="Model to convert (default: sdxs). Supported: sdxs, sd-turbo, sd-1-5.")
+                        help="Model to convert (default: sdxs).")
+    parser.add_argument("--size", type=int, default=None,
+                        help="Render resolution (default: read from model config or 512).")
     args = parser.parse_args()
 
     # Resolve output directory relative to project root (two levels up from script).
@@ -207,26 +210,34 @@ def main():
     output_dir = os.path.join(project_root, args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
     cfg = MODEL_CONFIGS[args.model]
+    size = args.size or cfg.get("render_size", 512)
+    latent_size = size // 8
 
     print("=" * 60)
-    print(f"CoreML Model Conversion — {args.model}")
+    print(f"CoreML Model Conversion — {args.model} @ {size}x{size}")
     print(f"Output: {os.path.abspath(output_dir)}")
     print("=" * 60)
 
     # Step 1: UNet
     print(f"\n[1/3] Converting UNet ({cfg['model_id']})...")
     unet_path = os.path.join(output_dir, f"{cfg['unet_name']}.mlpackage")
-    pipe = convert_unet(cfg["model_id"], cfg["hidden_size"], unet_path)
+    pipe = convert_unet(cfg["model_id"], cfg["hidden_size"], unet_path, size=size)
 
     # Step 2: VAE Encoder
-    print(f"\n[2/3] Converting TinyVAE Encoder (512x512)...")
-    enc_path = os.path.join(output_dir, "taesd_encoder_512.mlpackage")
-    convert_vae_encoder(enc_path, size=512)
+    print(f"\n[2/3] Converting TinyVAE Encoder ({size}x{size})...")
+    if size == 512:
+        enc_path = os.path.join(output_dir, "taesd_encoder_512.mlpackage")
+    else:
+        enc_path = os.path.join(output_dir, f"taesd_encoder_{size}.mlpackage")
+    convert_vae_encoder(enc_path, size=size)
 
     # Step 3: VAE Decoder
-    print(f"\n[3/3] Converting TinyVAE Decoder (512x512)...")
-    dec_path = os.path.join(output_dir, "taesd_decoder.mlpackage")
-    convert_vae_decoder(dec_path, size=512)
+    print(f"\n[3/3] Converting TinyVAE Decoder ({size}x{size})...")
+    if size == 512:
+        dec_path = os.path.join(output_dir, "taesd_decoder.mlpackage")
+    else:
+        dec_path = os.path.join(output_dir, f"taesd_decoder_{size}.mlpackage")
+    convert_vae_decoder(dec_path, size=size)
 
     print("\n" + "=" * 60)
     print("ALL CONVERSIONS COMPLETE!")

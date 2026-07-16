@@ -135,14 +135,19 @@ class StreamRGBDGUI:
 
         # --- Model ---
         ttk.Label(left, text="Model:").pack(anchor=tk.W, pady=(0, 2))
-        self.combo_model = ttk.Combobox(left, values=["sdxs", "sd-turbo"], state="readonly", width=20)
+        self.combo_model = ttk.Combobox(left, values=["sdxs", "sdxs-768", "sd-turbo", "sd-turbo-768"], state="readonly", width=20)
         self.combo_model.set("sdxs")
         self.combo_model.pack(anchor=tk.W, pady=(0, 8))
 
-        # --- Render Size ---
-        ttk.Label(left, text="Render Size:").pack(anchor=tk.W, pady=(0, 2))
-        self.combo_render = ttk.Combobox(left, values=[320, 384, 512], state="readonly", width=20)
-        self.combo_render.set(512)
+        # --- Output Resolution ---
+        ttk.Label(left, text="Output Resolution:").pack(anchor=tk.W, pady=(0, 2))
+        self.combo_render = ttk.Combobox(
+            left,
+            values=["512x512", "768x768", "384x384", "320x320", "720x1280"],
+            state="readonly",
+            width=20,
+        )
+        self.combo_render.set("512x512")
         self.combo_render.pack(anchor=tk.W, pady=(0, 8))
 
         # --- Depth ---
@@ -224,10 +229,23 @@ class StreamRGBDGUI:
         """根据 GUI 参数构建命令行。"""
         args = []
         args.append(f"--prompt {shlex.quote(self.entry_prompt.get())}")
-        args.append(f"--model {self.combo_model.get()}")
-        args.append(f"--render-size {self.combo_render.get()}")
-        args.append(f"--depth-backend {self.combo_depth.get()}")
-        args.append(f"--depth-model {self.combo_depth_model.get()}")
+        model_val = self.combo_model.get()
+        model_name = model_val.split(" ")[0] if " " in model_val else model_val
+        args.append(f"--model {shlex.quote(model_name)}")
+        # Parse output resolution: "512x512" -> render-size + output-size, "720x1280" -> render-size 512 + output-size 720x1280
+        res_val = self.combo_render.get()
+        if res_val == "720x1280":
+            args.append("--render-size 512")
+            args.append("--output-size 720x1280")
+        else:
+            size = res_val.split("x")[0] if "x" in res_val else res_val
+            args.append(f"--render-size {shlex.quote(size)}")
+            args.append(f"--output-size {shlex.quote(size)}")
+
+        args.append(f"--depth-backend {shlex.quote(self.combo_depth.get())}")
+        depth_model_val = self.combo_depth_model.get()
+        depth_model_name = depth_model_val.split(" ")[0] if " " in depth_model_val else depth_model_val
+        args.append(f"--depth-model {shlex.quote(depth_model_name)}")
         args.append(f"--strength {self.entry_strength.get()}")
         args.append(f"--blend {self.entry_blend.get()}")
         args.append(f"--ema {self.entry_ema.get()}")

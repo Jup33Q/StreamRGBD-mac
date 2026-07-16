@@ -157,7 +157,7 @@ def main():
     parser.add_argument("--prompt", type=str,
                         default="oil painting style, masterpiece, highly detailed")
     parser.add_argument("--model", type=str, default="sdxs", choices=list(MODEL_CONFIGS.keys()))
-    parser.add_argument("--render-size", type=int, default=512, choices=[320, 384, 512])
+    parser.add_argument("--render-size", type=int, default=512, choices=[320, 384, 512, 768])
     parser.add_argument("--output-size", type=int, default=512)
     parser.add_argument("--strength", type=float, default=0.5)
     parser.add_argument("--feedback", type=float, default=0.1)
