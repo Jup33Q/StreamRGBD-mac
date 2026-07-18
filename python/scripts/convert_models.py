@@ -3,14 +3,14 @@
 CoreML Model Conversion Script for StreamDiffusion-Mac
 
 Converts UNet + TinyVAE (encoder/decoder) to CoreML format.
-Supported base models: sdxs, sd-turbo, sd-1-5.
+Supported base models: sdxs, sd-1-5.
 SDXS-512 is the optimal model for real-time inference on Apple Silicon,
 achieving 22.7 FPS camera img2img on M3 Ultra.
 
 Usage:
     python scripts/convert_models.py
     python scripts/convert_models.py --output-dir ./coreml_models
-    python scripts/convert_models.py --model sd-turbo
+    python scripts/convert_models.py --model sdxs
     python scripts/convert_models.py --model sd-1-5     # SD 1.5 for LoRA
 """
 import os

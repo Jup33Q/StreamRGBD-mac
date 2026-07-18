@@ -81,7 +81,6 @@ VENV_ACTIVATE = os.path.join(PROJECT_DIR, ".venv", "bin", "activate")
 # ---------------------------------------------------------------------------
 _FALLBACK_MODELS = [
     ("sdxs", "基础模型"),
-    ("sd-turbo", "基础模型"),
 ]
 
 _FALLBACK_DEPTH_MODELS = [
@@ -1221,7 +1220,7 @@ class StreamRGBDGUIDB:
         if extra:
             args.append(extra)
 
-        full = f"source {VENV_ACTIVATE} && python {SCRIPT_PATH} " + " ".join(args)
+        full = f"source {VENV_ACTIVATE} && exec python -u {SCRIPT_PATH} " + " ".join(args)
         return ["bash", "-c", full]
 
     # ------------------------------------------------------------------
@@ -1357,9 +1356,10 @@ class StreamRGBDGUIDB:
             self._log("[STOP] 发送终止信号...")
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=5)
+                # Give the child process time to clean up NDI/CV2 windows.
+                self._proc.wait(timeout=12)
             except subprocess.TimeoutExpired:
-                self._log("[STOP] 强制杀死进程...")
+                self._log("[STOP] 进程未在 12s 内退出，强制杀死...")
                 self._proc.kill()
                 self._proc.wait()
         self._running = False

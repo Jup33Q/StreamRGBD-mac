@@ -25,6 +25,7 @@ COREML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."
 
 # Central JSON-backed configuration.
 from configs import MODEL_CONFIGS, DEFAULT_PROMPTS  # noqa: E402
+from utils.hf_utils import from_pretrained_local_first  # noqa: E402
 
 
 def ensure_vae_encoder(render_size, coreml_dir):
@@ -35,7 +36,9 @@ def ensure_vae_encoder(render_size, coreml_dir):
     import torch
     from diffusers import AutoencoderTiny
     print(f"  Auto-converting TinyVAE Encoder ({render_size}x{render_size})...")
-    vae = AutoencoderTiny.from_pretrained("madebyollin/taesd").eval().float().cpu()
+    vae = from_pretrained_local_first(
+        AutoencoderTiny.from_pretrained, "madebyollin/taesd"
+    ).eval().float().cpu()
 
     class W(torch.nn.Module):
         def __init__(self, v):
@@ -75,7 +78,9 @@ def ensure_vae_decoder(render_size, coreml_dir):
     from diffusers import AutoencoderTiny
     ls = render_size // 8
     print(f"  Auto-converting TinyVAE Decoder ({render_size}x{render_size})...")
-    vae = AutoencoderTiny.from_pretrained("madebyollin/taesd").eval().float().cpu()
+    vae = from_pretrained_local_first(
+        AutoencoderTiny.from_pretrained, "madebyollin/taesd"
+    ).eval().float().cpu()
 
     class W(torch.nn.Module):
         def __init__(self, v):
@@ -110,6 +115,8 @@ class Pipeline:
                  strength=0.5, prompts=None, latent_feedback=0.3, coreml_dir=COREML_DIR, seed=42,
                  lora_stack=None):
         import torch
+        if coreml_dir is None:
+            coreml_dir = COREML_DIR
         self.model_name = model_name
         self.render_size = render_size
         self.output_size = output_size
@@ -149,23 +156,23 @@ class Pipeline:
         # Scheduler setup
         if cfg["scheduler"] == "euler":
             from diffusers import EulerDiscreteScheduler
-            self._pipe.scheduler = EulerDiscreteScheduler.from_config(self._pipe.scheduler.config)
-        self._pipe.scheduler.set_timesteps(1 if cfg["scheduler"] == "euler" else 50, device="mps")
+            self._scheduler = EulerDiscreteScheduler.from_config(self._scheduler.config)
+        self._scheduler.set_timesteps(1 if cfg["scheduler"] == "euler" else 50, device="mps")
 
         if cfg["scheduler"] == "euler":
-            actual_t = self._pipe.scheduler.timesteps[0].cpu().item()
+            actual_t = self._scheduler.timesteps[0].cpu().item()
             self._t_buf[0] = np.float16(actual_t)
-            ap = self._pipe.scheduler.alphas_cumprod[
-                min(int(actual_t), len(self._pipe.scheduler.alphas_cumprod) - 1)
+            ap = self._scheduler.alphas_cumprod[
+                min(int(actual_t), len(self._scheduler.alphas_cumprod) - 1)
             ].item()
         else:
             t_idx = max(0, int(50 * (1.0 - strength)))
-            if t_idx < len(self._pipe.scheduler.timesteps):
-                actual_t = self._pipe.scheduler.timesteps[t_idx].cpu().item()
+            if t_idx < len(self._scheduler.timesteps):
+                actual_t = self._scheduler.timesteps[t_idx].cpu().item()
             else:
-                actual_t = self._pipe.scheduler.timesteps[0].cpu().item()
+                actual_t = self._scheduler.timesteps[0].cpu().item()
             self._t_buf[0] = np.float16(actual_t)
-            ap = self._pipe.scheduler.alphas_cumprod[int(actual_t)].item()
+            ap = self._scheduler.alphas_cumprod[int(actual_t)].item()
 
         self._sqrt_a = np.float16(np.sqrt(ap))
         self._sqrt_1ma = np.float16(np.sqrt(1.0 - ap))
@@ -183,7 +190,7 @@ class Pipeline:
             self._target_embeds = self._prompt_embeds.copy()
         self._prompt_lerp_speed = 0.05
 
-        del self._pipe
+        # Release the full diffusers pipeline if it was kept for LoRA fusion.
         self._pipe = None
         gc.collect()
         torch.mps.empty_cache()
@@ -258,17 +265,56 @@ class Pipeline:
         print(f"  Seed updated: {self._seed}")
         return self._seed
 
+    @staticmethod
+    def _load_scheduler(model_id):
+        """Load the repo's scheduler from its config alone (no full pipeline)."""
+        import json
+        import diffusers
+        from huggingface_hub import hf_hub_download
+
+        cfg_path = from_pretrained_local_first(
+            hf_hub_download, model_id, filename="scheduler/scheduler_config.json"
+        )
+        with open(cfg_path) as f:
+            sched_cfg = json.load(f)
+        sched_cls = getattr(diffusers, sched_cfg.get("_class_name", "PNDMScheduler"))
+        return sched_cls.from_config(sched_cfg)
+
     def _load_text_encoder_with_loras(self):
-        """Load the diffusers pipeline and fuse active LoRAs into the text encoder."""
+        """Load tokenizer + text encoder (+ scheduler), fusing active LoRAs.
+
+        Without active LoRAs only the tokenizer, text encoder and scheduler are
+        loaded, which is much faster than the full StableDiffusionPipeline and
+        also tolerates partially-cached HF snapshots (single-file resolution
+        instead of a whole-snapshot download). With active LoRAs the full
+        pipeline is required for load_lora_weights/fuse_lora.
+        """
         import torch
-        print("  Loading text encoder...")
         cfg = MODEL_CONFIGS[self.model_name]
-        pipe = __import__('diffusers').StableDiffusionPipeline.from_pretrained(
-            cfg["model_id"], torch_dtype=torch.float16).to("mps")
+        model_id = cfg["model_id"]
 
         active_loras = [l for l in self._lora_stack if l.get("weight", 0.0) != 0.0]
-        if active_loras:
-            print(f"  Applying {len(active_loras)} LoRA(s)...")
+        if not active_loras:
+            print("  Loading text encoder...")
+            from transformers import CLIPTextModel, CLIPTokenizer
+            self._tokenizer = from_pretrained_local_first(
+                CLIPTokenizer.from_pretrained, model_id, subfolder="tokenizer"
+            )
+            self._text_encoder = from_pretrained_local_first(
+                CLIPTextModel.from_pretrained, model_id,
+                subfolder="text_encoder", torch_dtype=torch.float16,
+            ).to("mps")
+            self._scheduler = self._load_scheduler(model_id)
+            self._pipe = None
+            return
+
+        print(f"  Loading text encoder (full pipeline, applying {len(active_loras)} LoRA(s))...")
+        pipe = from_pretrained_local_first(
+            __import__('diffusers').StableDiffusionPipeline.from_pretrained,
+            model_id,
+            torch_dtype=torch.float16,
+        ).to("mps")
+
         for lora in active_loras:
             path = lora.get("path", "")
             weight = float(lora.get("weight", 0.0))
@@ -286,6 +332,7 @@ class Pipeline:
 
         self._tokenizer = pipe.tokenizer
         self._text_encoder = pipe.text_encoder
+        self._scheduler = pipe.scheduler
         self._pipe = pipe
 
     def _reencode_prompts(self):

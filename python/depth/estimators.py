@@ -17,6 +17,7 @@ import torch
 
 from utils.device import default_device
 from utils.paths import COREML_DIR
+from utils.hf_utils import from_pretrained_local_first
 
 
 def normalize_depth(depth):
@@ -164,7 +165,9 @@ class TorchDepthEstimator:
         if device == "mps":
             print("  [DA3] MPS device has compatibility issues; using CPU for depth estimation.")
             device = "cpu"
-        self._da3_model = DepthAnything3.from_pretrained(repo_id).to(device)
+        self._da3_model = from_pretrained_local_first(
+            DepthAnything3.from_pretrained, repo_id
+        ).to(device)
         self._da3_model.eval()
 
     def _load_da2(self):
@@ -172,10 +175,12 @@ class TorchDepthEstimator:
         if repo_id is None:
             raise ValueError(f"Unknown DA2 model: {self.model_name}")
         from transformers import pipeline
-        self._pipe = pipeline(
-            "depth-estimation",
-            model=repo_id,
-            device=self.device,
+
+        def _load_depth_pipeline(model_id, **kwargs):
+            return pipeline("depth-estimation", model=model_id, **kwargs)
+
+        self._pipe = from_pretrained_local_first(
+            _load_depth_pipeline, repo_id, device=self.device
         )
 
     def estimate(self, rgb_np):
@@ -213,6 +218,10 @@ class DepthEstimator:
     def __init__(self, model_name="auto", backend="auto", coreml_path=None, device=None):
         self.device = device or default_device()
 
+        # "auto" resolves to DA2 base for best balance of speed and quality.
+        if model_name == "auto":
+            model_name = "da2-base"
+
         # Resolve CoreML model path based on requested model.
         if coreml_path is None:
             if model_name in self._DA2_MODELS:
@@ -220,8 +229,8 @@ class DepthEstimator:
             elif model_name in self._DA3_MODELS:
                 coreml_path = os.path.join(COREML_DIR, f"{model_name.replace('-', '_')}.mlpackage")
             else:
-                # auto or unknown -> default to da3_small
-                coreml_path = os.path.join(COREML_DIR, "da3_small.mlpackage")
+                # unknown -> default to da2_base
+                coreml_path = os.path.join(COREML_DIR, "da2_base.mlpackage")
 
         # Auto-select backend.
         # Prefer CoreML small variants when the requested base/large CoreML model

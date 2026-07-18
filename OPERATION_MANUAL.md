@@ -95,12 +95,8 @@ source .venv/bin/activate
 # 转换默认模型（SDXS-512，推荐）
 python python/scripts/convert_models.py
 
-# 或转换 SD-Turbo
-python python/scripts/convert_models.py --model sd-turbo
-
 # 768 分辨率模型（需要原模型支持 768 分辨率，转换更慢）
 python python/scripts/convert_models.py --model sdxs-768 --size 768
-python python/scripts/convert_models.py --model sd-turbo-768 --size 768
 ```
 
 转换后的模型保存在 `./coreml_models/` 目录。
@@ -208,7 +204,7 @@ python python/db_init.py
 |------|--------|------|
 | `--prompt` | `oil painting style, masterpiece` | AI 风格提示词 |
 | `--prompts` | `false` | 使用内置 10 组提示词画廊 |
-| `--model` | `sdxs` | 模型：`sdxs` / `sdxs-768` / `sd-turbo` / `sd-turbo-768` / `sd-1-5` |
+| `--model` | `sdxs` | 模型：`sdxs` / `sdxs-768` / `sd-1-5` |
 | `--render-size` | `512` | 推理分辨率：320 / 384 / 512 / 768 |
 | `--output-size` | `512` | 输出分辨率，支持整数（正方形）或 `WxH`（如 `720x1280`） |
 | `--strength` | `0.5` | 去噪强度（0.1-1.0） |
@@ -356,9 +352,6 @@ tccutil reset Camera
 # 低分辨率 = 高帧率（M1/M2 推荐）
 python python/camera_rgbd.py --render-size 384 --output-size 384
 
-# 更小模型（SD-Turbo）
-python python/camera_rgbd.py --model sd-turbo --render-size 384
-
 # 关闭深度估计（仅 camera.py）
 python python/camera.py --render-size 512
 ```
@@ -429,4 +422,4 @@ python python/camera_rgbd.py \
 
 ---
 
-*手册更新：2026-07-16（新增 DA3/DA2 small/base/large 全系列 CoreML 支持与数据库配置、方形输出分辨率、sdxs-768/sd-turbo-768 模型选项）*
+*手册更新：2026-07-16（新增 DA3/DA2 small/base/large 全系列 CoreML 支持与数据库配置、方形输出分辨率、sdxs-768 模型选项）*

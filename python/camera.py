@@ -14,7 +14,7 @@ Architecture:
 Usage:
     python camera.py --prompt "oil painting style, masterpiece"
     python camera.py --prompt "watercolor painting" --blend 0.3
-    python camera.py --model sd-turbo --prompt "anime style"
+    python camera.py --model sdxs-768 --prompt "anime style"
 
 Controls:
     q     : quit

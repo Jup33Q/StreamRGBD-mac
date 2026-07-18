@@ -45,6 +45,9 @@ erl_crash.dump
 # Captures
 capture_*.png
 
+# Generated macOS app bundles (run ./build_mac_app.sh to recreate)
+StreamDiffusion-*.app
+
 # Private docs with API keys
 DOWNLOAD_LORAS_PRIVATE.md
 private/

@@ -201,7 +201,7 @@ def main():
             lora_stack.append({"path": resolved, "weight": weight, "category": category})
 
     # Use PyTorch pipeline when LoRAs are requested so slider weights affect UNet.
-    # SD 1.5 LoRAs are incompatible with SDXS/SD-Turbo UNet attention shapes,
+    # SD 1.5 LoRAs are incompatible with SDXS UNet attention shapes,
     # so we force the base model to sd-1-5 in LoRA mode.
     use_torch_pipeline = bool(lora_stack)
     if use_torch_pipeline:

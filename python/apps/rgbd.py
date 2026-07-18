@@ -5,11 +5,13 @@ import sys
 import time
 import json
 import threading
+import signal
 
 import numpy as np
 import cv2
 
 from utils.ndi import _check_ndi, _create_ndi_sender, _send_ndi
+from utils.cv2_helper import destroy_cv_windows
 from pipelines.rgbd import _crop_to_aspect
 
 
@@ -176,6 +178,14 @@ class RGBDCameraApp:
         print("")
 
         self.running = True
+
+        def _signal_handler(signum, frame):
+            print(f"\n[signal] Received {signum}, shutting down...")
+            self.running = False
+
+        signal.signal(signal.SIGTERM, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
+
         cam_t = threading.Thread(target=self._camera_thread, args=(cap,), daemon=True)
         inf_t = threading.Thread(target=self._inference_thread, daemon=True)
         stdin_t = threading.Thread(target=self._stdin_thread, daemon=True)
@@ -327,7 +337,7 @@ class RGBDCameraApp:
         print(f"  AI+Depth inference: {ai_total} frames = {ai_total / total:.1f} FPS")
 
         cap.release()
-        cv2.destroyAllWindows()
+        destroy_cv_windows()
 
         if self._color_sender:
             try:

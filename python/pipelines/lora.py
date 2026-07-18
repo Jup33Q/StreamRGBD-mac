@@ -21,6 +21,7 @@ LORAS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lora
 
 from configs import MODEL_CONFIGS, DEFAULT_PROMPTS  # noqa: E402
 from pipelines.coreml import ensure_vae_encoder, ensure_vae_decoder
+from utils.hf_utils import from_pretrained_local_first  # noqa: E402
 
 
 class LoRAEnhancedPipeline:
@@ -64,8 +65,11 @@ class LoRAEnhancedPipeline:
 
         # Load diffusers pipeline for text encoder + LoRA support
         print("  Loading text encoder + LoRA...")
-        pipe = __import__('diffusers').StableDiffusionPipeline.from_pretrained(
-            cfg["model_id"], torch_dtype=torch.float16).to("mps")
+        pipe = from_pretrained_local_first(
+            __import__('diffusers').StableDiffusionPipeline.from_pretrained,
+            cfg["model_id"],
+            torch_dtype=torch.float16,
+        ).to("mps")
 
         # Apply LoRAs if provided
         if lora_paths:

@@ -135,7 +135,7 @@ class StreamRGBDGUI:
 
         # --- Model ---
         ttk.Label(left, text="Model:").pack(anchor=tk.W, pady=(0, 2))
-        self.combo_model = ttk.Combobox(left, values=["sdxs", "sdxs-768", "sd-turbo", "sd-turbo-768"], state="readonly", width=20)
+        self.combo_model = ttk.Combobox(left, values=["sdxs", "sdxs-768"], state="readonly", width=20)
         self.combo_model.set("sdxs")
         self.combo_model.pack(anchor=tk.W, pady=(0, 8))
 
@@ -255,7 +255,7 @@ class StreamRGBDGUI:
         if extra:
             args.append(extra)
 
-        full = f"source {VENV_ACTIVATE} && python {SCRIPT_PATH} " + " ".join(args)
+        full = f"source {VENV_ACTIVATE} && exec python {SCRIPT_PATH} " + " ".join(args)
         return ["bash", "-c", full]
 
     # ------------------------------------------------------------------
@@ -402,9 +402,10 @@ class StreamRGBDGUI:
             self._log("[STOP] 发送终止信号...")
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=5)
+                # Give the child process time to clean up NDI/CV2 windows.
+                self._proc.wait(timeout=12)
             except subprocess.TimeoutExpired:
-                self._log("[STOP] 强制杀死进程...")
+                self._log("[STOP] 进程未在 12s 内退出，强制杀死...")
                 self._proc.kill()
                 self._proc.wait()
         self._running = False

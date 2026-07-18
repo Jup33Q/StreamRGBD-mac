@@ -17,6 +17,7 @@ import torch
 from pipelines.coreml import COREML_DIR
 from configs import MODEL_CONFIGS
 from utils.device import _default_device
+from utils.hf_utils import from_pretrained_local_first
 from depth.estimators import DepthEstimator
 
 
@@ -43,7 +44,8 @@ class TorchPipeline:
 
         from diffusers import StableDiffusionPipeline, EulerDiscreteScheduler
 
-        self._pipe = StableDiffusionPipeline.from_pretrained(
+        self._pipe = from_pretrained_local_first(
+            StableDiffusionPipeline.from_pretrained,
             cfg["model_id"],
             torch_dtype=torch.float16,
             safety_checker=None,

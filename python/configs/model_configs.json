@@ -12,19 +12,6 @@
     "scheduler": "euler",
     "render_size": 768
   },
-  "sd-turbo": {
-    "model_id": "stabilityai/sd-turbo",
-    "hidden_size": 1024,
-    "unet_prefix": "unet_sd_turbo",
-    "scheduler": "default"
-  },
-  "sd-turbo-768": {
-    "model_id": "stabilityai/sd-turbo",
-    "hidden_size": 1024,
-    "unet_prefix": "unet_sd_turbo_768",
-    "scheduler": "default",
-    "render_size": 768
-  },
   "sd-1-5": {
     "model_id": "runwayml/stable-diffusion-v1-5",
     "hidden_size": 768,

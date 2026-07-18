@@ -128,7 +128,7 @@ python python/camera.py --prompt "oil painting style, masterpiece"
 │   │   ├── torch.py              # PyTorch/MPS pipeline with runtime LoRA adapters
 │   │   └── lora.py               # CoreML pipeline with fused SD 1.5 LoRAs
 │   ├── scripts/                  # Model conversion scripts
-│   │   ├── convert_models.py     # Convert SDXS/SD-Turbo to CoreML (supports --size 768)
+│   │   ├── convert_models.py     # Convert SDXS/SD 1.5 to CoreML (supports --size 768)
 │   │   ├── convert_da3_coreml.py # Convert DA3 small/base/large to CoreML
 │   │   ├── convert_da2_coreml.py # Convert DA2 small/base/large to CoreML
 │   │   └── convert_depth_model.py    # Convert depth models to CoreML (legacy)
@@ -230,8 +230,8 @@ python python/camera.py --prompts
 ### Advanced Options
 
 ```bash
-# Use SD-Turbo instead of SDXS (slower but different style)
-python python/camera.py --model sd-turbo --prompt "anime style"
+# Use SDXS-768 for higher resolution (slower, requires more memory)
+python python/camera.py --model sdxs-768 --prompt "anime style"
 
 # Blend camera with AI output (30% camera)
 python python/camera.py --blend 0.3
@@ -252,12 +252,8 @@ python python/camera.py --camera 1
 # Convert SDXS-512 (default, recommended)
 python python/scripts/convert_models.py
 
-# Convert SD-Turbo
-python python/scripts/convert_models.py --model sd-turbo
-
 # Convert 768 resolution models (slower, requires more memory)
 python python/scripts/convert_models.py --model sdxs-768 --size 768
-python python/scripts/convert_models.py --model sd-turbo-768 --size 768
 
 # Custom output directory
 python python/scripts/convert_models.py --output-dir ./my_models
@@ -549,7 +545,6 @@ Benchmarked on Apple M3 Ultra (60-core GPU, 512GB unified memory):
 | Model | Parameters | UNet Latency | Camera FPS | Quality |
 |-------|-----------|-------------|------------|---------|
 | **SDXS-512** | **328M** | **24.4ms** | **22.7** | Good |
-| SD-Turbo | 866M | 53.2ms | 13.8 | Good |
 | Tiny-SD | 323M | 31.3ms | ~20 | Fair |
 
 > Performance scales with GPU core count. Expected approximate FPS:
@@ -627,7 +622,6 @@ This project is built entirely on Python with the following core stack:
 | Component | Source | License |
 |-----------|--------|---------|
 | **SDXS-512** | [IDKiro/sdxs-512-0.9](https://huggingface.co/IDKiro/sdxs-512-0.9) | Apache-2.0 |
-| **SD-Turbo** | [stabilityai/sd-turbo](https://huggingface.co/stabilityai/sd-turbo) | Stability AI Community License |
 | **TAESD** | [madebyollin/taesd](https://github.com/madebyollin/taesd) | MIT |
 | **Depth Anything V2** | [LiheYoung/Depth-Anything-V2](https://github.com/LiheYoung/Depth-Anything-V2) | Apache-2.0 |
 | **Depth Anything V3** | [depth-anything/DA3-SMALL](https://huggingface.co/depth-anything/DA3-SMALL) | Apache-2.0 |
@@ -680,5 +674,4 @@ MIT License
 
 - [StreamDiffusion](https://github.com/cumulo-autumn/StreamDiffusion) — Original pipeline architecture
 - [SDXS](https://github.com/IDKiro/sdxs) — Distillation-specialized model
-- [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) — One-step diffusion baseline
 - [TAESD](https://github.com/madebyollin/taesd) — Tiny Autoencoder for Stable Diffusion

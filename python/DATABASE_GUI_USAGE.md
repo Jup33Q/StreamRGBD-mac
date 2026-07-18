@@ -149,7 +149,7 @@ streamdiffusion-mac/
 | 表名 | 用途 | 记录数（初始化后） |
 |------|------|------------------|
 | `model_type` | 模型类别（lora, depth, streamdiffusion-t2i, streamdiffusion-img2img） | 4 |
-| `model` | 具体模型（sdxs, sd-turbo, midas-depth 等） | 9 |
+| `model` | 具体模型（sdxs, sd-1-5, midas-depth 等） | 9 |
 | `prompt_category` | 提示词类别引用（style, subject, quality） | 3 |
 | `style_prompt` | 风格提示词（油画、水彩、赛博朋克等） | 8 |
 | `subject_prompt` | 主题提示词（龙、机器人、日式庭院等） | 5 |

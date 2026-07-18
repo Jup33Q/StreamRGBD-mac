@@ -2,9 +2,12 @@
 """3-thread camera application for smooth real-time display."""
 import time
 import threading
+import signal
 
 import numpy as np
 import cv2
+
+from utils.cv2_helper import destroy_cv_windows
 
 
 class CameraApp:
@@ -83,6 +86,14 @@ class CameraApp:
         print("")
 
         self.running = True
+
+        def _signal_handler(signum, frame):
+            print(f"\n[signal] Received {signum}, shutting down...")
+            self.running = False
+
+        signal.signal(signal.SIGTERM, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
+
         cam_t = threading.Thread(target=self._camera_thread, args=(cap,), daemon=True)
         inf_t = threading.Thread(target=self._inference_thread, daemon=True)
         cam_t.start()
@@ -203,4 +214,4 @@ class CameraApp:
         print(f"  AI inference: {ai_total} frames = {ai_total / total:.1f} AI FPS")
 
         cap.release()
-        cv2.destroyAllWindows()
+        destroy_cv_windows()

@@ -14,6 +14,7 @@ import time
 import json
 import argparse
 import threading
+import signal
 
 import numpy as np
 import cv2
@@ -21,8 +22,10 @@ import NDIlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pipelines.rgbd import RGBDPipeline
+from pipelines.coreml import COREML_DIR
 from configs import DEFAULT_PROMPTS, MODEL_CONFIGS
 from utils.ndi import _create_ndi_sender, _send_ndi
+from utils.cv2_helper import destroy_cv_windows
 
 
 __all__ = ["RGBDPipeline", "NDIApp"]
@@ -326,6 +329,14 @@ class NDIApp:
         print("")
 
         self.running = True
+
+        def _signal_handler(signum, frame):
+            print(f"\n[signal] Received {signum}, shutting down...")
+            self.running = False
+
+        signal.signal(signal.SIGTERM, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
+
         ndi_t = threading.Thread(target=self._ndi_receive_thread, args=(receiver,), daemon=True)
         inf_t = threading.Thread(target=self._inference_thread, daemon=True)
         stdin_t = threading.Thread(target=self._stdin_thread, daemon=True)
@@ -446,7 +457,7 @@ class NDIApp:
         if self._depth_sender:
             NDIlib.send_destroy(self._depth_sender)
         NDIlib.destroy()
-        cv2.destroyAllWindows()
+        destroy_cv_windows()
 
 
 def main():
@@ -484,7 +495,7 @@ def main():
                         help="NDI output source name base (creates -color and -depth)")
     parser.add_argument("--no-preview", action="store_true",
                         help="Disable OpenCV preview window")
-    parser.add_argument("--coreml-dir", type=str, default=None)
+    parser.add_argument("--coreml-dir", type=str, default=COREML_DIR)
     args = parser.parse_args()
 
     # Resolve output size
